@@ -1,8 +1,7 @@
 import type { DB } from "@op-engineering/op-sqlite";
 import { ExecuTorchEmbeddings, ExecuTorchLLM } from "@react-native-rag/executorch";
 import { OPSQLiteVectorStore } from "@react-native-rag/op-sqlite";
-import * as Device from "expo-device";
-import { Spinner, Typography } from "heroui-native";
+import { Button, Spinner, Typography } from "heroui-native";
 import {
   createContext,
   useCallback,
@@ -25,18 +24,15 @@ initExecutorch({ resourceFetcher: ExpoResourceFetcher });
 
 const DB_NAME = "offline-ai";
 
-/**
- * ponytail: one threshold off `Device.totalMemory`, which is Android-only and
- * null on iOS — so iOS defaults to lite. Calibrate against real hardware in
- * Phase 6. The Library tab lets the user override, so a wrong guess costs one
- * wasted download, not a broken app.
- */
-const STANDARD_TIER_MIN_BYTES = 6 * 1024 ** 3;
-
 export const TIERS = {
+  tiny: {
+    label: "Tiny — Qwen2.5 0.5B",
+    hint: "~0.4 GB download · fastest to get running",
+    model: models.llm.qwen2_5_0_5b,
+  },
   lite: {
     label: "Lite — Qwen2.5 1.5B",
-    hint: "~1.1 GB download · runs on most phones",
+    hint: "~1.1 GB download · better answers",
     model: models.llm.qwen2_5_1_5b,
   },
   standard: {
@@ -45,6 +41,15 @@ export const TIERS = {
     model: models.llm.qwen2_5_3b,
   },
 } as const;
+
+/**
+ * ponytail: default to the smallest model rather than the largest the RAM
+ * allows. The binding constraint on first run is the download, not the device —
+ * the fetcher has no resume, so one stalled connection discards the whole
+ * transfer. 0.4 GB gets a working app in minutes; upgrading is one tap in
+ * Library, by which point the app already works.
+ */
+const DEFAULT_TIER: Tier = "tiny";
 
 export type Tier = keyof typeof TIERS;
 export type SourceKind = "note" | "pack";
@@ -72,6 +77,8 @@ type AIContextValue = {
   /** Bumped after every write so list screens know to re-query. */
   revision: number;
   invalidate: () => void;
+  /** Re-attempt a failed model load. Downloads already on disk are reused. */
+  retry: () => void;
 };
 
 const AIContext = createContext<AIContextValue | null>(null);
@@ -86,9 +93,6 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function detectTier(): Tier {
-  return (Device.totalMemory ?? 0) >= STANDARD_TIER_MIN_BYTES ? "standard" : "lite";
-}
 
 export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
   const [store, setStore] = useState<OPSQLiteVectorStore | null>(null);
@@ -103,6 +107,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
   // Tagged with the tier it was built for: on a tier switch the old instance is
   // ignored immediately rather than being handed out until the new one loads.
   const [loaded, setLoaded] = useState<{ tier: Tier; rag: RAG } | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   const rag = loaded && loaded.tier === tier ? loaded.rag : null;
 
@@ -132,7 +137,9 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
         if (cancelled) return;
 
         setStore(vectorStore);
-        setTierState(saved === "lite" || saved === "standard" ? saved : detectTier());
+        setTierState(
+          typeof saved === "string" && saved in TIERS ? (saved as Tier) : DEFAULT_TIER,
+        );
       } catch (err) {
         if (!cancelled) setError(errorMessage(err));
       }
@@ -143,10 +150,12 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
     };
   }, []);
 
-  // LLM: rebuilt whenever the tier changes.
+  // LLM: rebuilt whenever the tier changes, or when the user retries a failed
+  // download. `attempt` exists purely to re-run this effect on retry.
   useEffect(() => {
     if (!store || !tier) return;
     let cancelled = false;
+    void attempt;
 
     const llm = new ExecuTorchLLM({
       ...TIERS[tier].model(),
@@ -175,7 +184,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
       cancelled = true;
       void llm.unload();
     };
-  }, [store, tier]);
+  }, [store, tier, attempt]);
 
   const setTier = useCallback(
     (next: Tier) => {
@@ -189,6 +198,11 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
   );
 
   const invalidate = useCallback(() => setRevision((r) => r + 1), []);
+
+  const retry = useCallback(() => {
+    setError(null);
+    setAttempt((a) => a + 1);
+  }, []);
 
   const value = useMemo<AIContextValue>(() => {
     // Derived, not stored: React owns the truth, so there is nothing to keep in
@@ -209,8 +223,18 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
               progress: download?.of === tier ? download.progress : 0,
             };
 
-    return { rag, store, db: store?.db ?? null, status, tier, setTier, revision, invalidate };
-  }, [rag, store, tier, error, download, setTier, revision, invalidate]);
+    return {
+      rag,
+      store,
+      db: store?.db ?? null,
+      status,
+      tier,
+      setTier,
+      revision,
+      invalidate,
+      retry,
+    };
+  }, [rag, store, tier, error, download, setTier, revision, invalidate, retry]);
 
   return <AIContext.Provider value={value}>{children}</AIContext.Provider>;
 }
@@ -220,7 +244,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
  * so it lives next to the provider rather than being repeated four times.
  */
 export function ModelGate({ children }: { children: ReactNode }): JSX.Element {
-  const { status } = useAI();
+  const { status, retry } = useAI();
 
   if (status.kind === "ready") return <>{children}</>;
 
@@ -247,6 +271,11 @@ export function ModelGate({ children }: { children: ReactNode }): JSX.Element {
           <Typography.Paragraph className="text-center text-muted-foreground">
             {status.message}
           </Typography.Paragraph>
+          <Typography.Paragraph className="text-center text-muted-foreground text-xs">
+            Downloads have no resume, so a dropped connection restarts the transfer. Retrying keeps
+            any model already on disk.
+          </Typography.Paragraph>
+          <Button onPress={retry}>Retry</Button>
         </>
       )}
     </View>
