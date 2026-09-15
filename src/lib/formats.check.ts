@@ -7,7 +7,7 @@
  */
 import assert from "node:assert/strict";
 
-import { clampForPrompt, concatFloat32, parsePack } from "./formats.ts";
+import { clampForPrompt, concatFloat32, parseFlashcards, parsePack } from "./formats.ts";
 
 // concatFloat32
 assert.deepEqual(Array.from(concatFloat32([])), []);
@@ -47,5 +47,39 @@ for (const bad of [
 assert.equal(clampForPrompt("short", 10), "short");
 assert.ok(clampForPrompt("x".repeat(20), 10).startsWith("x".repeat(10)));
 assert.ok(clampForPrompt("x".repeat(20), 10).includes("truncated"));
+
+// parseFlashcards — the clean case a well-behaved model produces
+assert.deepEqual(parseFlashcards("Q: Capital of France?\nA: Paris."), [
+  { question: "Capital of France?", answer: "Paris." },
+]);
+
+// …and the mess a 0.5B model actually produces: numbering, bullets, bold
+// markers, wrapped answers, preamble, and a trailing half-card.
+const messy = parseFlashcards(
+  [
+    "Here are your flashcards:",
+    "",
+    "1. **Q:** What does RAID 5 do?",
+    "   **A:** It stripes data across three or more disks",
+    "   with distributed parity.",
+    "",
+    "- Q. Why is parity useful?",
+    "  A) Any single disk can fail without data loss.",
+    "",
+    "Q: This one was cut off",
+  ].join("\n")
+);
+assert.equal(messy.length, 2, "the truncated trailing card must be dropped");
+assert.equal(messy[0].question, "What does RAID 5 do?");
+assert.equal(
+  messy[0].answer,
+  "It stripes data across three or more disks with distributed parity.",
+  "a wrapped answer must rejoin onto one line"
+);
+assert.equal(messy[1].answer, "Any single disk can fail without data loss.");
+
+// Nothing parseable must not invent cards.
+assert.deepEqual(parseFlashcards(""), []);
+assert.deepEqual(parseFlashcards("The model refused to answer."), []);
 
 console.log("formats: all checks passed");

@@ -6,3 +6,133 @@
 /* End-user path: heroui-native lives in the project's node_modules, one
    level up from this src/global.css file. */
 @source '../node_modules/heroui-native/lib';
+
+/* ---------------------------------------------------------------------------
+   Type
+   Two voices. Archivo (grotesk) is the instrument: labels, buttons, chrome.
+   Newsreader (serif) is for words a person wrote or the model wrote back.
+   RN has no synthetic weight mapping worth trusting, so every weight is its
+   own family name and gets its own utility.
+   --------------------------------------------------------------------------- */
+@theme {
+  --font-ui: "Archivo_400Regular";
+  --font-ui-medium: "Archivo_500Medium";
+  --font-ui-bold: "Archivo_600SemiBold";
+  --font-read: "Newsreader_400Regular";
+  --font-read-bold: "Newsreader_600SemiBold";
+  --font-read-italic: "Newsreader_400Regular_Italic";
+}
+
+/* ---------------------------------------------------------------------------
+   Colour — "cold storage"
+   The ground is cool steel, never warm: this app's whole point is that it sits
+   inert with the radio off. Exactly one hue lights up, an amber reserved for
+   the model doing work — streaming tokens, retrieval scores, the offline
+   badge. Nothing decorative is allowed to spend it, or it stops meaning
+   anything. Light and dark carry different ambers because one value cannot
+   clear contrast on both grounds.
+
+   Same @layer as heroui's own tokens and imported after them, so these win on
+   source order without an escalation war.
+   --------------------------------------------------------------------------- */
+@layer theme {
+  :root {
+    @variant light {
+      --background: #edf0f3;
+      --foreground: #15202b;
+
+      --surface: #ffffff;
+      --surface-foreground: var(--foreground);
+      --surface-secondary: #e4e9ee;
+      --surface-secondary-foreground: var(--foreground);
+      --surface-tertiary: #d9e0e7;
+      --surface-tertiary-foreground: var(--foreground);
+
+      --overlay: #ffffff;
+      --overlay-foreground: var(--foreground);
+      --backdrop: rgba(21, 32, 43, 0.28);
+
+      --muted: #5d6e7e;
+
+      --default: #e1e7ec;
+      --default-foreground: var(--foreground);
+
+      --accent: #8a5a00;
+      --accent-foreground: #ffffff;
+
+      --field-background: #ffffff;
+      --field-foreground: var(--foreground);
+      --field-placeholder: #7d8b99;
+      --field-border: #d5dce3;
+
+      --success: #1f7a5c;
+      --success-foreground: #ffffff;
+      --warning: #8a5a00;
+      --warning-foreground: #ffffff;
+      --danger: #b0261d;
+      --danger-foreground: #ffffff;
+
+      --segment: #ffffff;
+      --segment-foreground: var(--foreground);
+
+      --border: #d5dce3;
+      --separator: #c2ccd5;
+      --focus: var(--accent);
+      --link: var(--accent);
+
+      /* Tinted toward the ink, not neutral grey — a pure-black shadow on a
+         cool ground reads muddy. */
+      --surface-shadow: 0 1px 2px 0 rgba(21, 32, 43, 0.05), 0 6px 16px -10px rgba(21, 32, 43, 0.14);
+      --overlay-shadow: 0 12px 32px -12px rgba(21, 32, 43, 0.22);
+      --field-shadow: 0 1px 1px 0 rgba(21, 32, 43, 0.04);
+    }
+
+    @variant dark {
+      --background: #0e1620;
+      --foreground: #e7edf3;
+
+      --surface: #16202c;
+      --surface-foreground: var(--foreground);
+      --surface-secondary: #1c2734;
+      --surface-secondary-foreground: var(--foreground);
+      --surface-tertiary: #24303e;
+      --surface-tertiary-foreground: var(--foreground);
+
+      --overlay: #16202c;
+      --overlay-foreground: var(--foreground);
+      --backdrop: rgba(5, 10, 16, 0.6);
+
+      --muted: #8b9bab;
+
+      --default: #1c2734;
+      --default-foreground: var(--foreground);
+
+      --accent: #ffc24d;
+      --accent-foreground: #101923;
+
+      --field-background: #16202c;
+      --field-foreground: var(--foreground);
+      --field-placeholder: #75879a;
+      --field-border: #243040;
+
+      --success: #4ecfa4;
+      --success-foreground: #0e1620;
+      --warning: #ffc24d;
+      --warning-foreground: #101923;
+      --danger: #ff6b60;
+      --danger-foreground: #140706;
+
+      --segment: #24303e;
+      --segment-foreground: var(--foreground);
+
+      --border: #243040;
+      --separator: #32404f;
+      --focus: var(--accent);
+      --link: var(--accent);
+
+      --surface-shadow: 0 0 0 0 transparent;
+      --overlay-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.7);
+      --field-shadow: 0 0 0 0 transparent;
+    }
+  }
+}

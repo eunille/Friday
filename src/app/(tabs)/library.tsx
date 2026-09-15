@@ -1,7 +1,9 @@
-import { Button, Card, Chip, Input, Spinner, Typography } from "heroui-native";
-import { useCallback, useEffect, useState, type JSX } from "react";
-import { ScrollView, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { Button, Spinner, Typography } from "heroui-native";
+import { useCallback, useEffect, useState, type JSX, type ReactNode } from "react";
+import { Pressable, ScrollView, TextInput, View } from "react-native";
 
+import { ScreenHeader } from "../../components/screen";
 import {
   ModelGate,
   TIERS,
@@ -13,9 +15,22 @@ import {
   type Tier,
 } from "../../lib/ai";
 import { parsePack } from "../../lib/formats";
+import { usePalette } from "../../lib/theme";
+
+function Section({ title, children }: { title: string; children: ReactNode }): JSX.Element {
+  return (
+    <View className="gap-2.5">
+      <Typography.Heading type="h3" className="font-ui-bold text-[17px]">
+        {title}
+      </Typography.Heading>
+      {children}
+    </View>
+  );
+}
 
 function Library(): JSX.Element {
   const { rag, db, tier, setTier, revision, invalidate } = useAI();
+  const palette = usePalette();
 
   const [packs, setPacks] = useState<Source[]>([]);
   const [url, setUrl] = useState("");
@@ -71,72 +86,116 @@ function Library(): JSX.Element {
   return (
     <ScrollView
       className="flex-1 bg-background"
-      contentContainerClassName="px-4 py-4 gap-4"
+      contentContainerClassName="px-4 pt-3 pb-8 gap-6"
       keyboardShouldPersistTaps="handled"
     >
-      <Typography.Heading type="h2">Library</Typography.Heading>
+      <ScreenHeader title="Library">
+        What the phone is carrying: the model that answers, and the material it answers from.
+      </ScreenHeader>
 
-      <Card className="gap-3">
-        <Card.Title>Language model</Card.Title>
-        <Card.Description>
-          Switching re-downloads the model. Do it on Wi-Fi — after that it runs offline.
-        </Card.Description>
-        {(Object.keys(TIERS) as Tier[]).map((key) => (
-          <Button
-            key={key}
-            variant={tier === key ? "primary" : "outline"}
-            onPress={() => setTier(key)}
-          >
-            {`${TIERS[key].label} · ${TIERS[key].hint}`}
-          </Button>
-        ))}
-      </Card>
-
-      <Card className="gap-3">
-        <Card.Title>Knowledge packs</Card.Title>
-        <Card.Description>
-          Paste the URL of a pack JSON file. Any static host works — it is fetched once, then
-          available offline.
-        </Card.Description>
-        <Input
-          placeholder="https://example.com/packs/first-aid.json"
-          value={url}
-          onChangeText={setUrl}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="url"
-        />
-        <Button isDisabled={!url.trim() || importing} onPress={() => void importPack()}>
-          {importing ? <Spinner size="sm" /> : "Download pack"}
-        </Button>
-        {error && (
-          <Typography.Paragraph className="text-danger text-xs">{error}</Typography.Paragraph>
-        )}
-      </Card>
-
-      {packs.length === 0 ? (
-        <Typography.Paragraph className="text-muted-foreground text-center py-8">
-          No packs installed.
+      <Section title="Language model">
+        {/* Radio rows, not a stack of buttons — this is one choice out of
+            three, and picking one should look like picking, not submitting. */}
+        <View className="overflow-hidden rounded-2xl border border-border bg-surface">
+          {(Object.keys(TIERS) as Tier[]).map((key, index) => {
+            const active = tier === key;
+            return (
+              <Pressable
+                key={key}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: active }}
+                onPress={() => setTier(key)}
+                className={`flex-row items-center gap-3 px-4 py-3.5 active:bg-surface-tertiary ${
+                  index > 0 ? "border-t border-border" : ""
+                }`}
+              >
+                <Ionicons
+                  name={active ? "radio-button-on" : "radio-button-off"}
+                  size={19}
+                  color={active ? palette.accent : palette.muted}
+                />
+                <View className="flex-1 gap-0.5">
+                  <Typography.Paragraph className="font-ui-medium text-[15px]">
+                    {TIERS[key].name}
+                  </Typography.Paragraph>
+                  <Typography.Paragraph className="font-ui text-muted text-[12px]">
+                    {TIERS[key].note}
+                  </Typography.Paragraph>
+                </View>
+                <Typography.Paragraph className="font-ui-medium text-muted text-[12px]">
+                  {TIERS[key].size}
+                </Typography.Paragraph>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Typography.Paragraph className="font-ui text-muted text-[12px]">
+          Switching downloads the new model. Do it on Wi-Fi; after that it never reaches for the
+          network again.
         </Typography.Paragraph>
-      ) : (
-        packs.map((pack) => (
-          <Card key={pack.id} className="gap-3">
-            <View className="flex-row items-start justify-between gap-2">
-              <View className="flex-1">
-                <Card.Title>{pack.title}</Card.Title>
-                <Card.Description>
-                  {new Date(pack.createdAt).toLocaleDateString()} · {pack.chunks} chunk
-                  {pack.chunks === 1 ? "" : "s"}
-                </Card.Description>
+      </Section>
+
+      <Section title="Knowledge packs">
+        <View className="gap-2.5 rounded-2xl border border-border bg-surface p-3.5">
+          <Typography.Paragraph className="font-read text-[15px] leading-[23px] text-muted">
+            Paste a link to a pack file. Any static host works — it is fetched once and read from
+            the phone after that.
+          </Typography.Paragraph>
+          <TextInput
+            className="rounded-xl border border-border bg-background px-3.5 py-2.5 font-ui text-[15px] text-foreground"
+            placeholder="https://example.com/packs/first-aid.json"
+            placeholderTextColor={palette.placeholder}
+            value={url}
+            onChangeText={setUrl}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+          />
+          <Button isDisabled={!url.trim() || importing} onPress={() => void importPack()}>
+            {importing ? <Spinner size="sm" /> : "Add pack"}
+          </Button>
+          {error && (
+            <Typography.Paragraph className="font-ui text-danger text-[13px]">
+              {error}
+            </Typography.Paragraph>
+          )}
+        </View>
+
+        {packs.length === 0 ? (
+          <Typography.Paragraph className="py-2 font-ui text-muted text-[13px]">
+            No packs installed yet.
+          </Typography.Paragraph>
+        ) : (
+          <View className="overflow-hidden rounded-2xl border border-border bg-surface">
+            {packs.map((pack, index) => (
+              <View
+                key={pack.id}
+                className={`flex-row items-center gap-3 px-4 py-3.5 ${
+                  index > 0 ? "border-t border-border" : ""
+                }`}
+              >
+                <View className="flex-1 gap-0.5">
+                  <Typography.Paragraph className="font-ui-medium text-[15px]" numberOfLines={1}>
+                    {pack.title}
+                  </Typography.Paragraph>
+                  <Typography.Paragraph className="font-ui text-muted text-[12px]">
+                    {pack.chunks} passage{pack.chunks === 1 ? "" : "s"}
+                  </Typography.Paragraph>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${pack.title}`}
+                  onPress={() => void removePack(pack)}
+                  hitSlop={8}
+                  className="h-9 w-9 items-center justify-center rounded-full active:bg-surface-tertiary"
+                >
+                  <Ionicons name="trash-outline" size={17} color={palette.muted} />
+                </Pressable>
               </View>
-              <Chip size="sm">pack</Chip>
-            </View>
-            <Button size="sm" variant="danger-soft" onPress={() => void removePack(pack)}>
-              Remove
-            </Button>
-          </Card>
-        ))
-      )}
+            ))}
+          </View>
+        )}
+      </Section>
     </ScrollView>
   );
 }

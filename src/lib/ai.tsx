@@ -26,18 +26,24 @@ const DB_NAME = "offline-ai";
 
 export const TIERS = {
   tiny: {
-    label: "Tiny — Qwen2.5 0.5B",
-    hint: "~0.4 GB download · fastest to get running",
+    label: "Tiny",
+    name: "Qwen2.5 0.5B",
+    size: "0.4 GB",
+    note: "Fastest to get running.",
     model: models.llm.qwen2_5_0_5b,
   },
   lite: {
-    label: "Lite — Qwen2.5 1.5B",
-    hint: "~1.1 GB download · better answers",
+    label: "Lite",
+    name: "Qwen2.5 1.5B",
+    size: "1.1 GB",
+    note: "Noticeably better answers.",
     model: models.llm.qwen2_5_1_5b,
   },
   standard: {
-    label: "Standard — Qwen2.5 3B",
-    hint: "~1.9 GB download · wants ~3 GB free RAM",
+    label: "Standard",
+    name: "Qwen2.5 3B",
+    size: "1.9 GB",
+    note: "Wants about 3 GB of free memory.",
     model: models.llm.qwen2_5_3b,
   },
 } as const;
@@ -216,7 +222,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
             }
           : {
               kind: "loading",
-              stage: tier ? `Preparing ${TIERS[tier].label}` : "Starting up",
+              stage: tier ? `Preparing ${TIERS[tier].name}` : "Starting up",
               progress: download?.of === tier ? download.progress : 0,
             };
 
@@ -246,34 +252,52 @@ export function ModelGate({ children }: { children: ReactNode }): JSX.Element {
   if (status.kind === "ready") return <>{children}</>;
 
   return (
-    <View className="flex-1 bg-background items-center justify-center gap-3 px-8">
+    <View className="flex-1 bg-background justify-center px-7">
       {status.kind === "loading" ? (
-        <>
-          <Spinner size="lg" />
-          <Typography.Paragraph className="text-center">{status.stage}</Typography.Paragraph>
-          {status.progress > 0 && (
-            <Typography.Paragraph className="text-center text-muted-foreground">
-              {Math.round(status.progress * 100)}%
-            </Typography.Paragraph>
-          )}
-          <Typography.Paragraph className="text-center text-muted-foreground text-xs">
-            First run downloads the models. Keep the app open — after this it works offline.
+        <View className="gap-5">
+          <View className="flex-row items-end justify-between">
+            <Typography.Heading type="h2" className="font-ui-bold text-[26px] tracking-tight">
+              {status.stage}
+            </Typography.Heading>
+            {status.progress > 0 ? (
+              // Tabular figures would be ideal here; without them the percent
+              // is right-aligned so only the leading digit shifts.
+              <Typography.Paragraph className="font-ui-bold text-accent text-[26px]">
+                {Math.round(status.progress * 100)}%
+              </Typography.Paragraph>
+            ) : (
+              <Spinner size="sm" />
+            )}
+          </View>
+
+          <View className="h-[3px] w-full overflow-hidden rounded-full bg-surface-tertiary">
+            <View
+              className="h-full rounded-full bg-accent"
+              style={{ width: `${Math.max(status.progress, 0.01) * 100}%` }}
+            />
+          </View>
+
+          <Typography.Paragraph className="font-read text-muted text-[15px] leading-6">
+            This is the only time the app needs a network. Keep it open until the bar fills, then it
+            runs with the radio off.
           </Typography.Paragraph>
-        </>
+        </View>
       ) : (
-        <>
-          <Typography.Heading type="h3" className="text-center">
-            Couldn&apos;t load the models
+        <View className="gap-4">
+          <Typography.Heading type="h2" className="font-ui-bold text-[26px] tracking-tight">
+            The model didn&apos;t finish downloading
           </Typography.Heading>
-          <Typography.Paragraph className="text-center text-muted-foreground">
-            {status.message}
+          <View className="rounded-xl border border-border bg-surface px-4 py-3">
+            <Typography.Paragraph className="font-ui text-[13px] leading-5">
+              {status.message}
+            </Typography.Paragraph>
+          </View>
+          <Typography.Paragraph className="font-read text-muted text-[15px] leading-6">
+            Transfers can&apos;t resume, so a dropped connection starts that file over. Anything
+            already on disk is kept.
           </Typography.Paragraph>
-          <Typography.Paragraph className="text-center text-muted-foreground text-xs">
-            Downloads have no resume, so a dropped connection restarts the transfer. Retrying keeps
-            any model already on disk.
-          </Typography.Paragraph>
-          <Button onPress={retry}>Retry</Button>
-        </>
+          <Button onPress={retry}>Try again</Button>
+        </View>
       )}
     </View>
   );

@@ -64,3 +64,53 @@ export const PROMPT_CHAR_BUDGET = 6000;
 export function clampForPrompt(text: string, budget = PROMPT_CHAR_BUDGET): string {
   return text.length <= budget ? text : `${text.slice(0, budget)}\n…(truncated)`;
 }
+
+export type Flashcard = { question: string; answer: string };
+
+/** "Q:" / "A:" at the head of a line, after any "1." / "-" / "*" bullet. */
+const CARD_LINE = /^\s*(?:[-*•]\s*)?(?:\d+[.)]\s*)?(?:\*\*)?([QA])\s*[:.)-]\s*/i;
+
+/**
+ * Pulls Q/A pairs out of a model's answer.
+ *
+ * A 0.5B model asked for "Q: ... / A: ..." mostly complies, but sometimes
+ * numbers, bullets or bolds the markers, or wraps an answer onto a second
+ * line. Rather than tighten the prompt and hope, this tolerates all of that
+ * and drops anything still incomplete — a half-parsed card is worse than no
+ * card, because you cannot tell which half is missing while studying.
+ */
+export function parseFlashcards(text: string): Flashcard[] {
+  const cards: Flashcard[] = [];
+  let current: { question: string[]; answer: string[] } | null = null;
+  let field: "question" | "answer" = "question";
+
+  const flush = (): void => {
+    if (!current) return;
+    const question = current.question.join(" ").trim();
+    const answer = current.answer.join(" ").trim();
+    if (question && answer) cards.push({ question, answer });
+    current = null;
+  };
+
+  for (const line of text.split("\n")) {
+    const marker = CARD_LINE.exec(line);
+    const rest = marker ? line.slice(marker[0].length).replace(/\*\*/g, "").trim() : line.trim();
+    const kind = marker?.[1].toUpperCase();
+
+    if (kind === "Q") {
+      flush();
+      current = { question: rest ? [rest] : [], answer: [] };
+      field = "question";
+    } else if (kind === "A") {
+      if (!current) current = { question: [], answer: [] };
+      field = "answer";
+      if (rest) current.answer.push(rest);
+    } else if (current && rest) {
+      // Continuation of whichever field is currently open.
+      current[field].push(rest);
+    }
+  }
+  flush();
+
+  return cards;
+}
