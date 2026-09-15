@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { Typography } from "heroui-native";
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
-import { FlatList, KeyboardAvoidingView, Platform, Pressable, TextInput, View } from "react-native";
+import { FlatList, Pressable, TextInput, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -11,8 +12,9 @@ import Animated, {
 import type { Message } from "react-native-rag";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ModelGate, useAI } from "../../lib/ai";
-import { usePalette } from "../../lib/theme";
+import { IconButton } from "../../components/screen";
+import { ModelGate, systemPrompt, useAI } from "../../lib/ai";
+import { useKeyboardHeight, usePalette } from "../../lib/theme";
 
 const SUGGESTIONS = [
   "Summarise everything I saved this week",
@@ -62,17 +64,19 @@ function Turn({ message, live }: { message: Message; live: boolean }): JSX.Eleme
     <View className="my-2.5 flex-row gap-3 pr-2">
       <AnswerRule live={live} />
       <Typography.Paragraph className="flex-1 font-read text-[17px] leading-[26px]">
-        {message.content}
-        {live && message.content === "" ? "Thinking…" : ""}
+        {message.content === "" && live ? "Thinking…" : message.content}
       </Typography.Paragraph>
     </View>
   );
 }
 
 function Chat(): JSX.Element {
-  const { rag } = useAI();
+  const { rag, settings } = useAI();
+  const router = useRouter();
   const palette = usePalette();
   const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardHeight();
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState<string | null>(null);
@@ -93,7 +97,10 @@ function Chat(): JSX.Element {
     let answer = "";
     try {
       await rag.generate({
-        input: history,
+        // The system message is prepended per call rather than baked into the
+        // model, so changing a setting takes effect on the next question
+        // instead of forcing a reload.
+        input: [{ role: "system", content: systemPrompt(settings) }, ...history],
         augmentedGeneration: useNotes,
         callback: (token) => {
           answer += token;
@@ -112,31 +119,34 @@ function Chat(): JSX.Element {
     } finally {
       setStreaming(null);
     }
-  }, [rag, draft, busy, messages, useNotes]);
+  }, [rag, draft, busy, messages, useNotes, settings]);
 
   const shown: Message[] =
     streaming === null ? messages : [...messages, { role: "assistant", content: streaming }];
 
   return (
-    <KeyboardAvoidingView
-      className="flex-1 bg-background"
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={insets.bottom + 56}
-    >
-      <View className="flex-row items-center justify-between px-4 pb-2 pt-2">
-        <Typography.Heading type="h1" className="font-ui-bold text-[30px] tracking-tight">
+    <View className="flex-1 bg-background">
+      <View
+        className="flex-row items-center justify-between px-3 pb-1"
+        style={{ paddingTop: insets.top + 6 }}
+      >
+        <Typography.Heading
+          type="h1"
+          className="flex-1 pl-1 font-ui-bold text-[30px] tracking-tight"
+        >
           Ask
         </Typography.Heading>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Start a new chat"
+        <IconButton
+          name="options-outline"
+          label="AI behaviour settings"
+          onPress={() => router.push("/settings")}
+        />
+        <IconButton
+          name="create-outline"
+          label="Start a new chat"
           disabled={busy || messages.length === 0}
           onPress={() => setMessages([])}
-          className="h-10 w-10 items-center justify-center rounded-full border border-border active:bg-surface-tertiary"
-          style={{ opacity: busy || messages.length === 0 ? 0.35 : 1 }}
-        >
-          <Ionicons name="create-outline" size={19} color={palette.foreground} />
-        </Pressable>
+        />
       </View>
 
       <FlatList
@@ -149,6 +159,7 @@ function Chat(): JSX.Element {
         )}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         ListEmptyComponent={
           <View className="gap-6 pt-8">
             <Typography.Paragraph className="font-read text-[19px] leading-[28px] text-muted">
@@ -162,7 +173,7 @@ function Chat(): JSX.Element {
                   key={text}
                   accessibilityRole="button"
                   onPress={() => setDraft(text)}
-                  className={`flex-row items-center gap-3 px-4 py-3.5 active:bg-surface-tertiary ${
+                  className={`min-h-[52px] flex-row items-center gap-3 px-4 py-3.5 active:bg-surface-tertiary ${
                     index > 0 ? "border-t border-border" : ""
                   }`}
                 >
@@ -177,18 +188,23 @@ function Chat(): JSX.Element {
         }
       />
 
-      <View className="gap-2.5 border-t border-border bg-surface px-4 pb-3 pt-3">
+      {/* Lifted by the measured keyboard height. Android draws this app edge to
+          edge, so the window is never resized and nothing moves on its own. */}
+      <View
+        className="gap-2.5 border-t border-border bg-surface px-4 pb-3 pt-3"
+        style={{ marginBottom: keyboard }}
+      >
         <Pressable
           accessibilityRole="switch"
           accessibilityState={{ checked: useNotes }}
           onPress={() => setUseNotes((on) => !on)}
-          className={`flex-row items-center gap-1.5 self-start rounded-full border px-3 py-1.5 ${
+          className={`min-h-[36px] flex-row items-center gap-1.5 self-start rounded-full border px-3 ${
             useNotes ? "border-accent" : "border-border"
           }`}
         >
           <Ionicons
             name={useNotes ? "layers" : "layers-outline"}
-            size={13}
+            size={14}
             color={useNotes ? palette.accent : palette.muted}
           />
           <Typography.Paragraph
@@ -200,7 +216,7 @@ function Chat(): JSX.Element {
 
         <View className="flex-row items-end gap-2">
           <TextInput
-            className="max-h-32 flex-1 rounded-2xl border border-border bg-background px-4 py-2.5 font-ui text-[16px] text-foreground"
+            className="max-h-32 min-h-[44px] flex-1 rounded-2xl border border-border bg-background px-4 py-2.5 font-ui text-[16px] text-foreground"
             placeholder="Ask anything"
             placeholderTextColor={palette.placeholder}
             value={draft}
@@ -212,20 +228,20 @@ function Chat(): JSX.Element {
             accessibilityLabel={busy ? "Stop generating" : "Send"}
             onPress={() => (busy ? void rag?.interrupt() : void send())}
             disabled={!busy && !draft.trim()}
-            className={`h-11 w-11 items-center justify-center rounded-full ${
+            className={`h-12 w-12 items-center justify-center rounded-full ${
               busy ? "bg-surface-tertiary" : "bg-accent"
             }`}
             style={{ opacity: !busy && !draft.trim() ? 0.35 : 1 }}
           >
             <Ionicons
               name={busy ? "stop" : "arrow-up"}
-              size={19}
+              size={20}
               color={busy ? palette.foreground : palette.accentForeground}
             />
           </Pressable>
         </View>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

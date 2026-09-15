@@ -24,6 +24,9 @@ export default function TabsLayout(): JSX.Element {
     <Tabs
       screenOptions={{
         headerShown: false,
+        // The bar would otherwise sit between the keyboard and the field you
+        // are typing into, stealing 62pt from the thing you need to see.
+        tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: palette.accent,
         tabBarInactiveTintColor: palette.muted,
         tabBarStyle: {

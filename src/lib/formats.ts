@@ -65,6 +65,39 @@ export function clampForPrompt(text: string, budget = PROMPT_CHAR_BUDGET): strin
   return text.length <= budget ? text : `${text.slice(0, budget)}\n…(truncated)`;
 }
 
+/**
+ * Puts a document back together from the overlapping chunks it was split into.
+ *
+ * RecursiveCharacterTextSplitter overlaps neighbours by up to 100 characters so
+ * retrieval never cuts a sentence in half. Joining the chunks naively repeats
+ * that overlap, which is fine for a prompt but not for text a person is about
+ * to edit — so each chunk is welded onto the longest suffix of what is already
+ * written. Where no overlap is found the chunks were split on a separator the
+ * splitter consumed, and a newline is the closest thing to it.
+ */
+export function joinChunks(chunks: readonly string[], maxOverlap = 100): string {
+  let out = "";
+
+  for (const chunk of chunks) {
+    if (out === "") {
+      out = chunk;
+      continue;
+    }
+
+    let overlap = 0;
+    for (let size = Math.min(maxOverlap, out.length, chunk.length); size > 0; size--) {
+      if (out.endsWith(chunk.slice(0, size))) {
+        overlap = size;
+        break;
+      }
+    }
+
+    out += overlap > 0 ? chunk.slice(overlap) : `\n${chunk}`;
+  }
+
+  return out;
+}
+
 export type Flashcard = { question: string; answer: string };
 
 /** "Q:" / "A:" at the head of a line, after any "1." / "-" / "*" bullet. */
@@ -79,6 +112,98 @@ const CARD_LINE = /^\s*(?:[-*•]\s*)?(?:\d+[.)]\s*)?(?:\*\*)?([QA])\s*[:.)-]\s*
  * and drops anything still incomplete — a half-parsed card is worse than no
  * card, because you cannot tell which half is missing while studying.
  */
+export type QuizQuestion = { question: string; options: string[]; correctIndex: number };
+
+const QUIZ_BULLET = /^\s*(?:[-*•]\s*)?(?:(\d+)[.)]\s*)?/;
+const QUIZ_MARKER = /^(?:\*\*)?Q(?:uestion)?\s*\d*\s*[:.)-]\s*/i;
+const QUIZ_OPTION = /^\s*(?:\*\*)?([A-D])\s*(?:\*\*)?\s*[).:-]\s+/i;
+const QUIZ_ANSWER = /^\s*(?:\*\*)?(?:Correct(?:\s*Answer)?|Answer|Ans)\s*(?:\*\*)?\s*[:.)-]\s*/i;
+
+const clean = (value: string): string => value.replace(/\*\*/g, "").trim();
+
+/**
+ * The question text if this line starts one, else null.
+ *
+ * Bullets and numbering are stripped first so "1. Q: …" does not leave the
+ * "Q:" stranded in the question. A bare "1. …" counts too, because a model
+ * told to number its questions often drops the Q marker once it has.
+ */
+function questionBody(line: string): string | null {
+  const bullet = QUIZ_BULLET.exec(line);
+  const rest = line.slice(bullet?.[0].length ?? 0);
+
+  const marker = QUIZ_MARKER.exec(rest);
+  if (marker) return rest.slice(marker[0].length);
+
+  return bullet?.[1] !== undefined && rest.trim() ? rest : null;
+}
+
+/** Which option the model named: a letter, the word true/false, or the option's own text. */
+function resolveAnswer(answer: string, options: string[]): number {
+  const said = clean(answer).replace(/[.]$/, "");
+
+  const letter = /^([A-D])\b/i.exec(said);
+  if (letter) {
+    const index = letter[1].toUpperCase().charCodeAt(0) - 65;
+    if (index < options.length) return index;
+  }
+
+  const exact = options.findIndex((option) => option.toLowerCase() === said.toLowerCase());
+  if (exact >= 0) return exact;
+
+  return options.findIndex((option) => option.toLowerCase().startsWith(said.toLowerCase()));
+}
+
+/**
+ * Reads a generated quiz into answerable questions.
+ *
+ * `trueFalse` supplies the two options itself, because a model asked for a
+ * true/false question usually writes the statement and the verdict but not the
+ * choices. Anything whose correct answer cannot be resolved to one of the
+ * options is dropped: an unanswerable question is worse than a shorter quiz,
+ * since it marks you wrong whatever you tap.
+ */
+export function parseQuiz(text: string, trueFalse = false): QuizQuestion[] {
+  const questions: QuizQuestion[] = [];
+  let current: { question: string[]; options: string[]; answer: string } | null = null;
+
+  const flush = (): void => {
+    if (!current) return;
+    const question = clean(current.question.join(" "));
+    const options = current.options.length >= 2 ? current.options : trueFalse ? ["True", "False"] : [];
+    const correctIndex = question && options.length >= 2 ? resolveAnswer(current.answer, options) : -1;
+    if (correctIndex >= 0) questions.push({ question, options, correctIndex });
+    current = null;
+  };
+
+  for (const line of text.split("\n")) {
+    const answer = QUIZ_ANSWER.exec(line);
+    if (answer && current) {
+      current.answer = line.slice(answer[0].length);
+      continue;
+    }
+
+    const option = QUIZ_OPTION.exec(line);
+    if (option && current) {
+      current.options.push(clean(line.slice(option[0].length)));
+      continue;
+    }
+
+    const question = questionBody(line);
+    if (question !== null) {
+      flush();
+      current = { question: [question], options: [], answer: "" };
+      continue;
+    }
+
+    // A wrapped question line, but only before the options start.
+    if (current && current.options.length === 0 && line.trim()) current.question.push(line);
+  }
+  flush();
+
+  return questions;
+}
+
 export function parseFlashcards(text: string): Flashcard[] {
   const cards: Flashcard[] = [];
   let current: { question: string[]; answer: string[] } | null = null;

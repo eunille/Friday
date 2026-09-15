@@ -7,7 +7,14 @@
  */
 import assert from "node:assert/strict";
 
-import { clampForPrompt, concatFloat32, parseFlashcards, parsePack } from "./formats.ts";
+import {
+  clampForPrompt,
+  concatFloat32,
+  joinChunks,
+  parseFlashcards,
+  parsePack,
+  parseQuiz,
+} from "./formats.ts";
 
 // concatFloat32
 assert.deepEqual(Array.from(concatFloat32([])), []);
@@ -81,5 +88,50 @@ assert.equal(messy[1].answer, "Any single disk can fail without data loss.");
 // Nothing parseable must not invent cards.
 assert.deepEqual(parseFlashcards(""), []);
 assert.deepEqual(parseFlashcards("The model refused to answer."), []);
+
+// joinChunks — the overlap the splitter added must not survive into the editor
+assert.equal(joinChunks([]), "");
+assert.equal(joinChunks(["only one"]), "only one");
+assert.equal(
+  joinChunks(["Cool the burn under running", " under running water for 20 minutes."]),
+  "Cool the burn under running water for 20 minutes."
+);
+// No shared text: the separator the splitter ate is restored as a newline.
+assert.equal(joinChunks(["First para.", "Second para."]), "First para.\nSecond para.");
+// A whole chunk contained in the previous one must not duplicate.
+assert.equal(joinChunks(["abcdef", "def"]), "abcdef");
+
+// parseQuiz — multiple choice
+const mcq = parseQuiz(
+  [
+    "1. Q: Which layer does RAID 5 add?",
+    "A) Mirroring",
+    "B) Distributed parity",
+    "C) Nothing",
+    "D) Compression",
+    "Correct: B",
+  ].join("\n")
+);
+assert.equal(mcq.length, 1);
+assert.equal(mcq[0].options.length, 4);
+assert.equal(mcq[0].correctIndex, 1);
+assert.equal(mcq[0].question, "Which layer does RAID 5 add?");
+
+// parseQuiz — true/false supplies its own options, and accepts the word as the answer
+const tf = parseQuiz("Q: RAID 5 survives two disk failures.\nAnswer: False", true);
+assert.equal(tf.length, 1);
+assert.deepEqual(tf[0].options, ["True", "False"]);
+assert.equal(tf[0].correctIndex, 1);
+
+// parseQuiz — an answer given as the option's own text still resolves
+assert.equal(
+  parseQuiz("Q: Capital of France?\nA) Lyon\nB) Paris\nCorrect answer: Paris")[0].correctIndex,
+  1
+);
+
+// parseQuiz — unanswerable questions are dropped rather than shown
+assert.deepEqual(parseQuiz("Q: No options and no answer here"), []);
+assert.deepEqual(parseQuiz("Q: Pick one\nA) Yes\nB) No\nCorrect: Z"), []);
+assert.deepEqual(parseQuiz(""), []);
 
 console.log("formats: all checks passed");

@@ -1,10 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Spinner, Typography } from "heroui-native";
 import { useCallback, useState, type JSX } from "react";
-import { Pressable, ScrollView, TextInput, View } from "react-native";
+import { Pressable, TextInput, View } from "react-native";
 import type { QueryResult } from "react-native-rag";
 
-import { ScreenHeader } from "../../components/screen";
+import { Group, Screen, ScreenHeader } from "../../components/screen";
 import { ModelGate, useAI } from "../../lib/ai";
 import { usePalette } from "../../lib/theme";
 
@@ -56,17 +56,13 @@ function Search(): JSX.Element {
   }, [store, query, searching]);
 
   return (
-    <ScrollView
-      className="flex-1 bg-background"
-      contentContainerClassName="px-4 pt-3 pb-8 gap-5"
-      keyboardShouldPersistTaps="handled"
-    >
+    <Screen>
       <ScreenHeader title="Search">
         Matches on meaning rather than words, so &ldquo;how do I stop a burn hurting&rdquo; finds a
         note that only says &ldquo;cool under running water&rdquo;.
       </ScreenHeader>
 
-      <View className="flex-row items-center gap-2.5 rounded-full border border-border bg-surface px-4">
+      <View className="min-h-[48px] flex-row items-center gap-2.5 rounded-full border border-border bg-surface px-4">
         <Ionicons name="search" size={17} color={palette.muted} />
         <TextInput
           className="flex-1 py-3 font-ui text-[16px] text-foreground"
@@ -88,7 +84,7 @@ function Search(): JSX.Element {
               setQuery("");
               setResults(null);
             }}
-            hitSlop={8}
+            hitSlop={14}
           >
             <Ionicons name="close-circle" size={18} color={palette.muted} />
           </Pressable>
@@ -111,7 +107,7 @@ function Search(): JSX.Element {
       )}
 
       {results && results.length > 0 && (
-        <View className="overflow-hidden rounded-2xl border border-border bg-surface">
+        <Group>
           {results.map((result, index) => (
             <View
               key={result.id}
@@ -131,9 +127,9 @@ function Search(): JSX.Element {
               </Typography.Paragraph>
             </View>
           ))}
-        </View>
+        </Group>
       )}
-    </ScrollView>
+    </Screen>
   );
 }
 

@@ -17,6 +17,8 @@ import { initExecutorch, models } from "react-native-executorch";
 import { ExpoResourceFetcher } from "react-native-executorch-expo-resource-fetcher";
 import { RAG, uuidv4 } from "react-native-rag";
 
+import { joinChunks } from "./formats";
+
 // ExecuTorch 0.9+ ships no downloader of its own — an adapter must be
 // registered before anything tries to load a model. Module scope, so this runs
 // on import, well before the provider's effects fire.
@@ -60,7 +62,7 @@ const DEFAULT_TIER: Tier = "tiny";
 export type Tier = keyof typeof TIERS;
 export type SourceKind = "note" | "pack";
 
-/** A note or knowledge pack, reconstructed from the chunks it produced. */
+/** A knowledge pack, reconstructed from the chunks it produced. */
 export type Source = {
   id: string;
   title: string;
@@ -68,10 +70,87 @@ export type Source = {
   chunks: number;
 };
 
+/** A note, as the person wrote it. Chunks in `vectors` are derived from this. */
+export type Note = {
+  id: string;
+  title: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AIStatus =
   | { kind: "loading"; stage: string; progress: number }
   | { kind: "ready" }
   | { kind: "error"; message: string };
+
+/* -------------------------------------------------------------------------
+   How the model is told to behave
+   ------------------------------------------------------------------------- */
+
+export const LENGTHS = {
+  brief: { label: "Brief", note: "A few sentences." },
+  balanced: { label: "Balanced", note: "A short paragraph or two." },
+  detailed: { label: "Detailed", note: "As much as the question needs." },
+} as const;
+
+export const TONES = {
+  plain: { label: "Plain", note: "Everyday words." },
+  friendly: { label: "Friendly", note: "Warm and conversational." },
+  technical: { label: "Technical", note: "Precise, uses the proper terms." },
+} as const;
+
+export type AISettings = {
+  length: keyof typeof LENGTHS;
+  tone: keyof typeof TONES;
+  /** Anything the person wants added verbatim. */
+  instructions: string;
+};
+
+export const DEFAULT_SETTINGS: AISettings = {
+  length: "balanced",
+  tone: "plain",
+  instructions: "",
+};
+
+const LENGTH_RULE: Record<AISettings["length"], string> = {
+  brief: "Answer in at most three sentences.",
+  balanced: "Answer in at most two short paragraphs.",
+  detailed: "Answer thoroughly, but stop once the question is fully answered.",
+};
+
+const TONE_RULE: Record<AISettings["tone"], string> = {
+  plain: "Use plain, everyday language.",
+  friendly: "Be warm and conversational.",
+  technical: "Be precise and use correct technical terms.",
+};
+
+/**
+ * Builds the system message sent ahead of every question.
+ *
+ * The last two rules are not preferences, they are repairs. A 0.5B model left
+ * to itself will restate the same clause three ways and then close by offering
+ * more help, which is most of why answers felt long. Saying so directly costs
+ * a few tokens and removes both.
+ */
+export function systemPrompt(settings: AISettings): string {
+  return [
+    "You are a helpful assistant running entirely on the user's phone.",
+    LENGTH_RULE[settings.length],
+    TONE_RULE[settings.tone],
+    "Never repeat a point you have already made, in any wording.",
+    "Do not end with an offer of further help or a summary of what you just said.",
+    settings.instructions.trim(),
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** The three files a tier downloads, for progress and for cancelling. */
+function tierSources(tier: Tier): unknown[] {
+  const { modelSource, tokenizerSource, tokenizerConfigSource } = TIERS[tier].model();
+  return [modelSource, tokenizerSource, tokenizerConfigSource];
+}
 
 type AIContextValue = {
   rag: RAG | null;
@@ -80,11 +159,15 @@ type AIContextValue = {
   status: AIStatus;
   tier: Tier | null;
   setTier: (tier: Tier) => void;
+  settings: AISettings;
+  setSettings: (settings: AISettings) => void;
   /** Bumped after every write so list screens know to re-query. */
   revision: number;
   invalidate: () => void;
   /** Re-attempt a failed model load. Downloads already on disk are reused. */
   retry: () => void;
+  /** Abort the running download and fall back to the last model that worked. */
+  cancelDownload: () => void;
 };
 
 const AIContext = createContext<AIContextValue | null>(null);
@@ -102,6 +185,7 @@ function errorMessage(error: unknown): string {
 export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
   const [store, setStore] = useState<OPSQLiteVectorStore | null>(null);
   const [tier, setTierState] = useState<Tier | null>(null);
+  const [settings, setSettingsState] = useState<AISettings>(DEFAULT_SETTINGS);
   const [revision, setRevision] = useState(0);
   const [error, setError] = useState<string | null>(null);
   // Tagged with what it belongs to, so a stale percentage never leaks into the
@@ -116,7 +200,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
 
   const rag = loaded && loaded.tier === tier ? loaded.rag : null;
 
-  // Boot: embedding model + vector store + persisted tier. Runs once.
+  // Boot: embedding model + vector store + saved preferences. Runs once.
   useEffect(() => {
     let cancelled = false;
 
@@ -133,16 +217,32 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
         await vectorStore.load();
         if (cancelled) return;
 
-        await vectorStore.db.execute(
+        const db = vectorStore.db;
+        await db.execute(
           "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         );
-        const saved = (
-          await vectorStore.db.execute("SELECT value FROM settings WHERE key = 'tier'")
-        ).rows[0]?.value;
+        await db.execute(
+          `CREATE TABLE IF NOT EXISTS notes (
+             id        TEXT PRIMARY KEY,
+             title     TEXT NOT NULL,
+             body      TEXT NOT NULL,
+             createdAt TEXT NOT NULL,
+             updatedAt TEXT NOT NULL
+           )`
+        );
+        await backfillNotes(db);
         if (cancelled) return;
 
+        const saved = await db.execute("SELECT key, value FROM settings");
+        const byKey = new Map(saved.rows.map((row: any) => [row.key as string, row.value]));
+        if (cancelled) return;
+
+        const savedTier = byKey.get("tier");
         setStore(vectorStore);
-        setTierState(typeof saved === "string" && saved in TIERS ? (saved as Tier) : DEFAULT_TIER);
+        setSettingsState(readSettings(byKey.get("ai")));
+        setTierState(
+          typeof savedTier === "string" && savedTier in TIERS ? (savedTier as Tier) : DEFAULT_TIER
+        );
       } catch (err) {
         if (!cancelled) setError(errorMessage(err));
       }
@@ -200,12 +300,45 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
     [store]
   );
 
+  const setSettings = useCallback(
+    (next: AISettings) => {
+      setSettingsState(next);
+      void store?.db.execute(
+        "INSERT INTO settings (key, value) VALUES ('ai', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [JSON.stringify(next)]
+      );
+    },
+    [store]
+  );
+
   const invalidate = useCallback(() => setRevision((r) => r + 1), []);
 
   const retry = useCallback(() => {
     setError(null);
     setAttempt((a) => a + 1);
   }, []);
+
+  const cancelDownload = useCallback(() => {
+    if (tier) {
+      // Rejects the in-flight load, which surfaces through the catch above.
+      void Promise.resolve(
+        ExpoResourceFetcher.cancelFetching(...(tierSources(tier) as never[]))
+      ).catch(() => {});
+    }
+
+    // The previous model was unloaded when the tier changed, so its RAG is a
+    // dead handle — drop it and let the effect rebuild, rather than briefly
+    // reporting ready with an instance that would throw on first use.
+    const previous = loaded?.tier ?? null;
+    setLoaded(null);
+
+    if (previous && previous !== tier) {
+      setTier(previous);
+      setError(null);
+    } else {
+      setError("Download cancelled.");
+    }
+  }, [tier, loaded, setTier]);
 
   const value = useMemo<AIContextValue>(() => {
     // Derived, not stored: React owns the truth, so there is nothing to keep in
@@ -233,13 +366,69 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
       status,
       tier,
       setTier,
+      settings,
+      setSettings,
       revision,
       invalidate,
       retry,
+      cancelDownload,
     };
-  }, [rag, store, tier, error, download, setTier, revision, invalidate, retry]);
+  }, [
+    rag,
+    store,
+    tier,
+    error,
+    download,
+    setTier,
+    settings,
+    setSettings,
+    revision,
+    invalidate,
+    retry,
+    cancelDownload,
+  ]);
 
   return <AIContext.Provider value={value}>{children}</AIContext.Provider>;
+}
+
+function readSettings(value: unknown): AISettings {
+  if (typeof value !== "string") return DEFAULT_SETTINGS;
+  try {
+    const parsed = JSON.parse(value) as Partial<AISettings>;
+    return {
+      length: parsed.length && parsed.length in LENGTHS ? parsed.length : DEFAULT_SETTINGS.length,
+      tone: parsed.tone && parsed.tone in TONES ? parsed.tone : DEFAULT_SETTINGS.tone,
+      instructions: typeof parsed.instructions === "string" ? parsed.instructions : "",
+    };
+  } catch {
+    // A corrupt blob is not worth failing boot over.
+    return DEFAULT_SETTINGS;
+  }
+}
+
+/**
+ * Notes written before the `notes` table existed live only as embedded chunks.
+ * Reconstruct them once so they open in the editor like anything else. Runs on
+ * every boot but matches nothing after the first.
+ */
+async function backfillNotes(db: DB): Promise<void> {
+  const orphans = await db.execute(
+    `SELECT json_extract(metadata, '$.sourceId')  AS id,
+            json_extract(metadata, '$.title')     AS title,
+            json_extract(metadata, '$.createdAt') AS createdAt
+     FROM vectors
+     WHERE json_extract(metadata, '$.kind') = 'note'
+       AND json_extract(metadata, '$.sourceId') NOT IN (SELECT id FROM notes)
+     GROUP BY json_extract(metadata, '$.sourceId')`
+  );
+
+  for (const row of orphans.rows as unknown as Source[]) {
+    const body = await readSource(db, row.id);
+    await db.execute(
+      "INSERT OR IGNORE INTO notes (id, title, body, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)",
+      [row.id, row.title ?? "Untitled", body, row.createdAt, row.createdAt]
+    );
+  }
 }
 
 /**
@@ -247,7 +436,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
  * so it lives next to the provider rather than being repeated four times.
  */
 export function ModelGate({ children }: { children: ReactNode }): JSX.Element {
-  const { status, retry } = useAI();
+  const { status, retry, cancelDownload } = useAI();
 
   if (status.kind === "ready") return <>{children}</>;
 
@@ -260,8 +449,6 @@ export function ModelGate({ children }: { children: ReactNode }): JSX.Element {
               {status.stage}
             </Typography.Heading>
             {status.progress > 0 ? (
-              // Tabular figures would be ideal here; without them the percent
-              // is right-aligned so only the leading digit shifts.
               <Typography.Paragraph className="font-ui-bold text-accent text-[26px]">
                 {Math.round(status.progress * 100)}%
               </Typography.Paragraph>
@@ -281,6 +468,10 @@ export function ModelGate({ children }: { children: ReactNode }): JSX.Element {
             This is the only time the app needs a network. Keep it open until the bar fills, then it
             runs with the radio off.
           </Typography.Paragraph>
+
+          <Button variant="tertiary" onPress={cancelDownload}>
+            Cancel download
+          </Button>
         </View>
       ) : (
         <View className="gap-4">
@@ -303,9 +494,78 @@ export function ModelGate({ children }: { children: ReactNode }): JSX.Element {
   );
 }
 
+/* -------------------------------------------------------------------------
+   Notes
+   The `notes` table is what the person wrote; `vectors` is a search index
+   derived from it. Editing writes the text immediately and re-embeds later,
+   because embedding every keystroke would pin the CPU for nothing.
+   ------------------------------------------------------------------------- */
+
+export async function listNotes(db: DB): Promise<Note[]> {
+  const result = await db.execute("SELECT * FROM notes ORDER BY updatedAt DESC");
+  return result.rows as unknown as Note[];
+}
+
+export async function getNote(db: DB, id: string): Promise<Note | null> {
+  const result = await db.execute("SELECT * FROM notes WHERE id = ?", [id]);
+  return (result.rows[0] as unknown as Note) ?? null;
+}
+
+export function newNoteId(): string {
+  return uuidv4();
+}
+
+/** Cheap: text only, safe to call on a debounce while typing. */
+export async function saveNoteText(
+  db: DB,
+  note: { id: string; title: string; body: string }
+): Promise<void> {
+  const now = new Date().toISOString();
+  await db.execute(
+    `INSERT INTO notes (id, title, body, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET title = excluded.title,
+                                   body = excluded.body,
+                                   updatedAt = excluded.updatedAt`,
+    [note.id, note.title, note.body, now, now]
+  );
+}
+
 /**
- * Chunks `text`, embeds it, and stores it. One document (note or pack entry)
- * becomes many `vectors` rows sharing a `sourceId`.
+ * Expensive: re-chunks and re-embeds the note so search and Ask see the edit.
+ * Call it when the person leaves the note, not while they are typing.
+ */
+export async function reindexNote(rag: RAG, db: DB, id: string): Promise<void> {
+  const note = await getNote(db, id);
+  if (!note) return;
+
+  await db.execute("DELETE FROM vectors WHERE json_extract(metadata, '$.sourceId') = ?", [id]);
+  if (!note.body.trim()) return;
+
+  await rag.splitAddDocument({
+    document: note.body,
+    metadataGenerator: (chunks) =>
+      chunks.map((_, chunk) => ({
+        sourceId: id,
+        kind: "note" as const,
+        title: note.title,
+        createdAt: note.createdAt,
+        chunk,
+      })),
+  });
+}
+
+export async function deleteNote(db: DB, id: string): Promise<void> {
+  await db.execute("DELETE FROM vectors WHERE json_extract(metadata, '$.sourceId') = ?", [id]);
+  await db.execute("DELETE FROM notes WHERE id = ?", [id]);
+}
+
+/* -------------------------------------------------------------------------
+   Packs
+   ------------------------------------------------------------------------- */
+
+/**
+ * Chunks `text`, embeds it, and stores it. One pack becomes many `vectors`
+ * rows sharing a `sourceId`.
  */
 export async function addSource(
   rag: RAG,
@@ -348,7 +608,7 @@ export async function listSources(db: DB, kind: SourceKind): Promise<Source[]> {
   return result.rows as unknown as Source[];
 }
 
-/** Reassembles a source's chunks back into their original order. */
+/** Reassembles a source's chunks, removing the overlap the splitter added. */
 export async function readSource(db: DB, sourceId: string): Promise<string> {
   const result = await db.execute(
     `SELECT document FROM vectors
@@ -356,9 +616,7 @@ export async function readSource(db: DB, sourceId: string): Promise<string> {
      ORDER BY json_extract(metadata, '$.chunk')`,
     [sourceId]
   );
-  // Chunks overlap by 100 chars, so this repeats a little text. Harmless as
-  // prompt input; don't use it to re-export the original document.
-  return result.rows.map((row: any) => row.document as string).join("\n");
+  return joinChunks(result.rows.map((row: any) => row.document as string));
 }
 
 export async function deleteSource(db: DB, sourceId: string): Promise<void> {

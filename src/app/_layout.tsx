@@ -49,6 +49,10 @@ export default function RootLayout(): JSX.Element | null {
         <AIProvider>
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="note/[id]" />
+            <Stack.Screen name="summary/[id]" />
+            <Stack.Screen name="quiz/[id]" />
+            <Stack.Screen name="settings" />
           </Stack>
         </AIProvider>
         <StatusBar style="auto" />

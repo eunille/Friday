@@ -1,10 +1,19 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { Button, Spinner, Typography } from "heroui-native";
 import { useCallback, useEffect, useState, type JSX, type ReactNode } from "react";
-import { Pressable, ScrollView, TextInput, View } from "react-native";
+import { Pressable, TextInput, View } from "react-native";
 
-import { ScreenHeader } from "../../components/screen";
 import {
+  ChoiceRow,
+  Group,
+  IconButton,
+  Screen,
+  ScreenHeader,
+  SectionTitle,
+} from "../../components/screen";
+import {
+  LENGTHS,
   ModelGate,
   TIERS,
   addSource,
@@ -20,16 +29,15 @@ import { usePalette } from "../../lib/theme";
 function Section({ title, children }: { title: string; children: ReactNode }): JSX.Element {
   return (
     <View className="gap-2.5">
-      <Typography.Heading type="h3" className="font-ui-bold text-[17px]">
-        {title}
-      </Typography.Heading>
+      <SectionTitle>{title}</SectionTitle>
       {children}
     </View>
   );
 }
 
 function Library(): JSX.Element {
-  const { rag, db, tier, setTier, revision, invalidate } = useAI();
+  const { rag, db, tier, setTier, settings, revision, invalidate } = useAI();
+  const router = useRouter();
   const palette = usePalette();
 
   const [packs, setPacks] = useState<Source[]>([]);
@@ -84,54 +92,53 @@ function Library(): JSX.Element {
   );
 
   return (
-    <ScrollView
-      className="flex-1 bg-background"
-      contentContainerClassName="px-4 pt-3 pb-8 gap-6"
-      keyboardShouldPersistTaps="handled"
-    >
+    <Screen>
       <ScreenHeader title="Library">
         What the phone is carrying: the model that answers, and the material it answers from.
       </ScreenHeader>
 
+      <Section title="How the AI answers">
+        <Group>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open AI behaviour settings"
+            onPress={() => router.push("/settings")}
+            className="min-h-[56px] flex-row items-center gap-3 px-4 py-3.5 active:bg-surface-tertiary"
+          >
+            <Ionicons name="options-outline" size={19} color={palette.muted} />
+            <View className="flex-1 gap-0.5">
+              <Typography.Paragraph className="font-ui-medium text-[15px]">
+                AI behaviour
+              </Typography.Paragraph>
+              <Typography.Paragraph className="font-ui text-muted text-[12px]">
+                Length, tone and your own instructions.
+              </Typography.Paragraph>
+            </View>
+            <Typography.Paragraph className="font-ui-medium text-muted text-[12px]">
+              {LENGTHS[settings.length].label}
+            </Typography.Paragraph>
+            <Ionicons name="chevron-forward" size={16} color={palette.muted} />
+          </Pressable>
+        </Group>
+      </Section>
+
       <Section title="Language model">
-        {/* Radio rows, not a stack of buttons — this is one choice out of
-            three, and picking one should look like picking, not submitting. */}
-        <View className="overflow-hidden rounded-2xl border border-border bg-surface">
-          {(Object.keys(TIERS) as Tier[]).map((key, index) => {
-            const active = tier === key;
-            return (
-              <Pressable
-                key={key}
-                accessibilityRole="radio"
-                accessibilityState={{ selected: active }}
-                onPress={() => setTier(key)}
-                className={`flex-row items-center gap-3 px-4 py-3.5 active:bg-surface-tertiary ${
-                  index > 0 ? "border-t border-border" : ""
-                }`}
-              >
-                <Ionicons
-                  name={active ? "radio-button-on" : "radio-button-off"}
-                  size={19}
-                  color={active ? palette.accent : palette.muted}
-                />
-                <View className="flex-1 gap-0.5">
-                  <Typography.Paragraph className="font-ui-medium text-[15px]">
-                    {TIERS[key].name}
-                  </Typography.Paragraph>
-                  <Typography.Paragraph className="font-ui text-muted text-[12px]">
-                    {TIERS[key].note}
-                  </Typography.Paragraph>
-                </View>
-                <Typography.Paragraph className="font-ui-medium text-muted text-[12px]">
-                  {TIERS[key].size}
-                </Typography.Paragraph>
-              </Pressable>
-            );
-          })}
-        </View>
+        <Group>
+          {(Object.keys(TIERS) as Tier[]).map((key, index) => (
+            <ChoiceRow
+              key={key}
+              first={index === 0}
+              label={TIERS[key].name}
+              note={TIERS[key].note}
+              trailing={TIERS[key].size}
+              selected={tier === key}
+              onPress={() => setTier(key)}
+            />
+          ))}
+        </Group>
         <Typography.Paragraph className="font-ui text-muted text-[12px]">
-          Switching downloads the new model. Do it on Wi-Fi; after that it never reaches for the
-          network again.
+          Switching downloads the new model, and you can cancel part-way without losing the one you
+          already have. Do it on Wi-Fi; after that it never reaches for the network again.
         </Typography.Paragraph>
       </Section>
 
@@ -142,7 +149,7 @@ function Library(): JSX.Element {
             the phone after that.
           </Typography.Paragraph>
           <TextInput
-            className="rounded-xl border border-border bg-background px-3.5 py-2.5 font-ui text-[15px] text-foreground"
+            className="min-h-[44px] rounded-xl border border-border bg-background px-3.5 py-2.5 font-ui text-[15px] text-foreground"
             placeholder="https://example.com/packs/first-aid.json"
             placeholderTextColor={palette.placeholder}
             value={url}
@@ -166,11 +173,11 @@ function Library(): JSX.Element {
             No packs installed yet.
           </Typography.Paragraph>
         ) : (
-          <View className="overflow-hidden rounded-2xl border border-border bg-surface">
+          <Group>
             {packs.map((pack, index) => (
               <View
                 key={pack.id}
-                className={`flex-row items-center gap-3 px-4 py-3.5 ${
+                className={`min-h-[60px] flex-row items-center gap-3 px-4 py-2.5 ${
                   index > 0 ? "border-t border-border" : ""
                 }`}
               >
@@ -182,21 +189,18 @@ function Library(): JSX.Element {
                     {pack.chunks} passage{pack.chunks === 1 ? "" : "s"}
                   </Typography.Paragraph>
                 </View>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove ${pack.title}`}
+                <IconButton
+                  name="trash-outline"
+                  label={`Remove ${pack.title}`}
+                  tone="muted"
                   onPress={() => void removePack(pack)}
-                  hitSlop={8}
-                  className="h-9 w-9 items-center justify-center rounded-full active:bg-surface-tertiary"
-                >
-                  <Ionicons name="trash-outline" size={17} color={palette.muted} />
-                </Pressable>
+                />
               </View>
             ))}
-          </View>
+          </Group>
         )}
       </Section>
-    </ScrollView>
+    </Screen>
   );
 }
 
