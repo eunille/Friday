@@ -93,7 +93,6 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-
 export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
   const [store, setStore] = useState<OPSQLiteVectorStore | null>(null);
   const [tier, setTierState] = useState<Tier | null>(null);
@@ -137,9 +136,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
         if (cancelled) return;
 
         setStore(vectorStore);
-        setTierState(
-          typeof saved === "string" && saved in TIERS ? (saved as Tier) : DEFAULT_TIER,
-        );
+        setTierState(typeof saved === "string" && saved in TIERS ? (saved as Tier) : DEFAULT_TIER);
       } catch (err) {
         if (!cancelled) setError(errorMessage(err));
       }
@@ -316,7 +313,11 @@ export async function listSources(db: DB, kind: SourceKind): Promise<Source[]> {
             COUNT(*)                              AS chunks
      FROM vectors
      WHERE json_extract(metadata, '$.kind') = ?
-     GROUP BY id
+     -- Group by the expression, not the "id" alias: vectors has a real column
+     -- named id (the per-chunk uuid), and SQLite resolves a bare GROUP BY name
+     -- to the column before the alias -- which yields one row per chunk
+     -- instead of one per note.
+     GROUP BY json_extract(metadata, '$.sourceId')
      ORDER BY createdAt DESC`,
     [kind]
   );

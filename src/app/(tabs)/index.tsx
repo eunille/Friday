@@ -74,11 +74,21 @@ function Chat(): JSX.Element {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={insets.bottom + 56}
     >
-      <View className="flex-row items-center justify-between px-4 pt-2 pb-1">
-        <Typography.Paragraph className="text-muted-foreground text-xs">
-          Ground answers in my notes
-        </Typography.Paragraph>
-        <Switch isSelected={useNotes} onSelectedChange={setUseNotes} />
+      <View className="flex-row items-center justify-between gap-3 px-4 pt-2 pb-1">
+        <View className="flex-row items-center gap-2">
+          <Typography.Paragraph className="text-muted-foreground text-xs">
+            Use my notes
+          </Typography.Paragraph>
+          <Switch isSelected={useNotes} onSelectedChange={setUseNotes} />
+        </View>
+        <Button
+          size="sm"
+          variant="ghost"
+          isDisabled={busy || messages.length === 0}
+          onPress={() => setMessages([])}
+        >
+          New chat
+        </Button>
       </View>
 
       <FlatList
