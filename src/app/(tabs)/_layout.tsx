@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import type { JSX } from "react";
 import { useColorScheme } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { NAV_THEME } from "../../lib/theme";
 
@@ -19,6 +20,7 @@ const TABS = [
 
 export default function TabsLayout(): JSX.Element {
   const palette = NAV_THEME[useColorScheme() === "dark" ? "dark" : "light"];
+  const insets = useSafeAreaInsets();
 
   return (
     <Tabs
@@ -36,8 +38,12 @@ export default function TabsLayout(): JSX.Element {
           // Default RN elevation paints a grey smear over the hairline; the
           // border alone is the separation.
           elevation: 0,
-          height: 62,
+          // Android draws this app edge to edge, so the system back/home/recents
+          // bar sits on top of whatever is at the bottom. Grow the tab bar by
+          // that inset and pad it out, or the icons share a row with them.
+          height: 62 + insets.bottom,
           paddingTop: 6,
+          paddingBottom: insets.bottom,
         },
         tabBarLabelStyle: {
           fontFamily: "Archivo_500Medium",

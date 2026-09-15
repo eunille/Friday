@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import { Pressable, ScrollView, TextInput, View } from "react-native";
 import { AudioManager, AudioRecorder } from "react-native-audio-api";
 import { models, useSpeechToText } from "react-native-executorch";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { IconButton, PageHeader } from "../../components/screen";
 import { ModelGate, deleteNote, getNote, reindexNote, saveNoteText, useAI } from "../../lib/ai";
@@ -41,9 +42,14 @@ function MoreMenu({ items, onClose }: { items: MenuItem[]; onClose: () => void }
         accessibilityRole="button"
         accessibilityLabel="Close menu"
         onPress={onClose}
-        className="absolute inset-0 z-10"
+        // Explicit offsets: the inset utilities compile to nothing, and an
+        // absolute box with none of them collapses into the top-left corner.
+        style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 10 }}
       />
-      <View className="absolute right-3 top-2 z-20 min-w-[184px] overflow-hidden rounded-2xl border border-border bg-surface">
+      <View
+        className="min-w-[184px] overflow-hidden rounded-2xl border border-border bg-surface"
+        style={{ position: "absolute", right: 12, top: 8, zIndex: 20 }}
+      >
         {items.map((item, index) => (
           <Pressable
             key={item.label}
@@ -78,6 +84,7 @@ function Editor({ id }: { id: string }): JSX.Element {
   const router = useRouter();
   const palette = usePalette();
   const keyboard = useKeyboardHeight();
+  const insets = useSafeAreaInsets();
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -303,10 +310,11 @@ function Editor({ id }: { id: string }): JSX.Element {
         )}
       </ScrollView>
 
-      {/* Sits directly on top of the keyboard rather than behind it. */}
+      {/* Sits on top of the keyboard when it is open, and clear of Android's
+          own buttons when it is not. */}
       <View
-        className="flex-row items-center gap-3 border-t border-border bg-surface px-4 py-2.5"
-        style={{ marginBottom: keyboard }}
+        className="flex-row items-center gap-3 border-t border-border bg-surface px-4 pt-2.5"
+        style={{ marginBottom: keyboard, paddingBottom: 10 + (keyboard > 0 ? 0 : insets.bottom) }}
       >
         <Pressable
           accessibilityRole="button"

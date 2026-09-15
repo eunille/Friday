@@ -1,9 +1,9 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Button, Spinner, Typography } from "heroui-native";
 import { useCallback, useEffect, useState, type JSX } from "react";
-import { ScrollView, View } from "react-native";
+import { View } from "react-native";
 
-import { ChoiceRow, Group, PageHeader, SectionTitle } from "../../components/screen";
+import { ChoiceRow, Group, PageHeader, PageScroll, SectionTitle } from "../../components/screen";
 import { ModelGate, getNote, useAI } from "../../lib/ai";
 import { clampForPrompt } from "../../lib/formats";
 
@@ -90,7 +90,7 @@ function Summary({ id }: { id: string }): JSX.Element {
     <View className="flex-1 bg-background">
       <PageHeader title={title || "Summary"} onBack={() => router.back()} />
 
-      <ScrollView className="flex-1" contentContainerClassName="px-4 pt-4 pb-10 gap-5">
+      <PageScroll>
         <SectionTitle>How should it be summarised?</SectionTitle>
         <Group>
           {(Object.keys(STYLES) as Style[]).map((key, index) => (
@@ -140,7 +140,7 @@ function Summary({ id }: { id: string }): JSX.Element {
             This note is empty. Write something first and there will be something to summarise.
           </Typography.Paragraph>
         )}
-      </ScrollView>
+      </PageScroll>
     </View>
   );
 }

@@ -1,17 +1,16 @@
 import { useRouter } from "expo-router";
 import { Typography } from "heroui-native";
 import { useState, type JSX } from "react";
-import { ScrollView, TextInput, View } from "react-native";
+import { TextInput, View } from "react-native";
 
-import { ChoiceRow, Group, PageHeader, SectionTitle } from "../components/screen";
+import { ChoiceRow, Group, PageHeader, PageScroll, SectionTitle } from "../components/screen";
 import { LENGTHS, ModelGate, TONES, systemPrompt, useAI, type AISettings } from "../lib/ai";
-import { useKeyboardHeight, usePalette } from "../lib/theme";
+import { usePalette } from "../lib/theme";
 
 function Settings(): JSX.Element {
   const { settings, setSettings } = useAI();
   const router = useRouter();
   const palette = usePalette();
-  const keyboard = useKeyboardHeight();
 
   // Typing shouldn't write to SQLite on every keystroke; the field commits when
   // it loses focus or the page closes.
@@ -30,12 +29,7 @@ function Settings(): JSX.Element {
         }}
       />
 
-      <ScrollView
-        className="flex-1"
-        contentContainerClassName="px-4 pt-4 gap-5"
-        contentContainerStyle={{ paddingBottom: 40 + keyboard }}
-        keyboardShouldPersistTaps="handled"
-      >
+      <PageScroll>
         <SectionTitle>Answer length</SectionTitle>
         <Group>
           {(Object.keys(LENGTHS) as (keyof typeof LENGTHS)[]).map((key, index) => (
@@ -91,7 +85,7 @@ function Settings(): JSX.Element {
           These apply to answers in Ask. Summaries and quizzes set their own rules on their own
           screens.
         </Typography.Paragraph>
-      </ScrollView>
+      </PageScroll>
     </View>
   );
 }

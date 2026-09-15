@@ -2,9 +2,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Button, Spinner, Typography } from "heroui-native";
 import { useCallback, useEffect, useState, type JSX } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, View } from "react-native";
 
-import { ChoiceRow, Group, PageHeader, SectionTitle } from "../../components/screen";
+import { ChoiceRow, Group, PageHeader, PageScroll, SectionTitle } from "../../components/screen";
 import { ModelGate, getNote, useAI } from "../../lib/ai";
 import { clampForPrompt, parseFlashcards, parseQuiz } from "../../lib/formats";
 import { usePalette } from "../../lib/theme";
@@ -204,7 +204,7 @@ function Quiz({ id }: { id: string }): JSX.Element {
     return (
       <View className="flex-1 bg-background">
         <PageHeader title={title || "Quiz"} onBack={() => router.back()} />
-        <ScrollView className="flex-1" contentContainerClassName="px-4 pt-4 pb-10 gap-5">
+        <PageScroll>
           {phase.kind === "failed" && (
             <View className="rounded-2xl border border-danger bg-surface px-4 py-3">
               <Typography.Paragraph className="font-ui text-[13px] leading-5">
@@ -264,7 +264,7 @@ function Quiz({ id }: { id: string }): JSX.Element {
               This note is empty. Write something first and there will be something to ask about.
             </Typography.Paragraph>
           )}
-        </ScrollView>
+        </PageScroll>
       </View>
     );
   }
@@ -306,7 +306,7 @@ function Quiz({ id }: { id: string }): JSX.Element {
           />
         </View>
 
-        <ScrollView className="flex-1" contentContainerClassName="px-4 pt-5 pb-8 gap-5">
+        <PageScroll>
           <Typography.Paragraph className="font-read text-[21px] leading-[31px]">
             {item.question}
           </Typography.Paragraph>
@@ -346,7 +346,7 @@ function Quiz({ id }: { id: string }): JSX.Element {
               {phase.index + 1 < phase.items.length ? "Next question" : "See score"}
             </Button>
           )}
-        </ScrollView>
+        </PageScroll>
       </View>
     );
   }
@@ -357,8 +357,8 @@ function Quiz({ id }: { id: string }): JSX.Element {
   return (
     <View className="flex-1 bg-background">
       <PageHeader title="Score" onBack={() => router.back()} />
-      <ScrollView className="flex-1" contentContainerClassName="px-4 pt-6 pb-10 gap-5">
-        <View className="items-center gap-1">
+      <PageScroll>
+        <View className="items-center gap-1 pt-2">
           <Typography.Heading type="h1" className="font-ui-bold text-accent text-[54px]">
             {score}/{phase.items.length}
           </Typography.Heading>
@@ -400,7 +400,7 @@ function Quiz({ id }: { id: string }): JSX.Element {
         </Group>
 
         <Button onPress={() => setPhase({ kind: "setup" })}>Quiz me again</Button>
-      </ScrollView>
+      </PageScroll>
     </View>
   );
 }

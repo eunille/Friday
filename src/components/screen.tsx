@@ -69,7 +69,34 @@ export function Screen({ children }: { children: ReactNode }): JSX.Element {
     <ScrollView
       className="flex-1 bg-background"
       contentContainerClassName="px-4 gap-5"
-      contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 32 + keyboard }}
+      contentContainerStyle={{
+        paddingTop: insets.top + 8,
+        paddingBottom: 32 + keyboard,
+      }}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+    >
+      {children}
+    </ScrollView>
+  );
+}
+
+/**
+ * Scrolling body for a pushed page — one without a tab bar beneath it.
+ *
+ * The tab bar normally holds content clear of Android's back/home/recents
+ * strip. A pushed page has no tab bar, so it has to carry that inset itself or
+ * its last button ends up underneath the system buttons and cannot be tapped.
+ */
+export function PageScroll({ children }: { children: ReactNode }): JSX.Element {
+  const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardHeight();
+
+  return (
+    <ScrollView
+      className="flex-1"
+      contentContainerClassName="px-4 pt-4 gap-5"
+      contentContainerStyle={{ paddingBottom: 32 + insets.bottom + keyboard }}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
     >

@@ -89,8 +89,14 @@ function Notes(): JSX.Element {
         accessibilityRole="button"
         accessibilityLabel="New note"
         onPress={() => open(newNoteId())}
-        className="absolute bottom-5 right-5 h-14 w-14 items-center justify-center rounded-full bg-accent active:opacity-80"
+        className="h-14 w-14 items-center justify-center rounded-full bg-accent active:opacity-80"
+        // The inset utilities (bottom-5 / right-5) compile to nothing here, and
+        // RN defaults an absolute box to the top-left corner — which is where
+        // this button was landing, over the clock. Positioned explicitly.
         style={{
+          position: "absolute",
+          right: 20,
+          bottom: 20,
           shadowColor: "#15202b",
           shadowOpacity: 0.25,
           shadowRadius: 12,
