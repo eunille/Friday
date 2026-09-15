@@ -1,0 +1,59 @@
+{
+  "expo": {
+    "name": "Offline AI",
+    "slug": "offline-ai",
+    "owner": "dajackal",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "offline-ai",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.eunille.offlineai",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ],
+      "expo-status-bar",
+      "react-native-blob-util",
+      "@kesha-antonov/react-native-background-downloader",
+      [
+        "react-native-audio-api",
+        {
+          "iosMicrophonePermission": "Offline AI transcribes your voice notes on this device. Nothing is uploaded.",
+          "androidPermissions": [
+            "android.permission.RECORD_AUDIO",
+            "android.permission.FOREGROUND_SERVICE",
+            "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+          ]
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "338b5ab7-7686-4ee9-836e-a799fb5d4c43"
+      }
+    }
+  }
+}
