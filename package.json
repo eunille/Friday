@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "main": "expo-router/entry",
+  "op-sqlite": {
+    "libsql": true
+  },
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
