@@ -14,8 +14,14 @@ import {
   type ReactNode,
 } from "react";
 import { View } from "react-native";
-import { models } from "react-native-executorch";
+import { initExecutorch, models } from "react-native-executorch";
+import { ExpoResourceFetcher } from "react-native-executorch-expo-resource-fetcher";
 import { RAG, uuidv4 } from "react-native-rag";
+
+// ExecuTorch 0.9+ ships no downloader of its own — an adapter must be
+// registered before anything tries to load a model. Module scope, so this runs
+// on import, well before the provider's effects fire.
+initExecutorch({ resourceFetcher: ExpoResourceFetcher });
 
 const DB_NAME = "offline-ai";
 
