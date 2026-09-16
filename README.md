@@ -1,9 +1,9 @@
 # Offline AI
 
 A note-taking app with a language model living inside it. You write notes, it answers
-questions about them, summarises them and quizzes you on them — and it does all of that
-on the phone. No account, no API key, no server. After the first run it works in
-airplane mode.
+questions about them, summarises them, quizzes you on them, and reads the nutrition panel
+off a photographed label — and it does all of that on the phone. No account, no API key,
+no server. After the first run it works in airplane mode.
 
 <p align="center">
   <img src="assets/download-qr.png" width="220" alt="QR code linking to the Android download" />
