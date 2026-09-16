@@ -14,6 +14,9 @@ import {
   parseFlashcards,
   parsePack,
   parseQuiz,
+  preview,
+  readingOrder,
+  relativeDate,
 } from "./formats.ts";
 
 // concatFloat32
@@ -133,5 +136,42 @@ assert.equal(
 assert.deepEqual(parseQuiz("Q: No options and no answer here"), []);
 assert.deepEqual(parseQuiz("Q: Pick one\nA) Yes\nB) No\nCorrect: Z"), []);
 assert.deepEqual(parseQuiz(""), []);
+
+// relativeDate — the four branches, off synthetic offsets from now
+const daysAgo = (n: number): string => new Date(Date.now() - n * 86_400_000).toISOString();
+assert.equal(relativeDate(daysAgo(0)), "Today");
+assert.equal(relativeDate(daysAgo(1)), "Yesterday");
+assert.equal(relativeDate(daysAgo(3)), "3 days ago");
+// A future timestamp (clock skew, or a note saved a moment ago) must not read
+// as "-1 days ago".
+assert.equal(relativeDate(new Date(Date.now() + 60_000).toISOString()), "Today");
+// Past a week it gives up on prose and shows the date.
+assert.notEqual(relativeDate(daysAgo(40)).includes("days ago"), true);
+
+// preview — first line that has something on it, never a blank
+assert.equal(preview("\n\n  Osmosis notes\nsecond line"), "Osmosis notes");
+assert.equal(preview("   \n\t\n"), "Empty note");
+assert.equal(preview(""), "Empty note");
+
+// readingOrder — boxes come back shuffled; position decides the sequence
+const box = (text: string, x1: number, y1: number) => ({
+  text,
+  bbox: { x1, y1, x2: x1 + 40, y2: y1 + 10 },
+});
+// Same line, supplied right-to-left, must read left-to-right.
+assert.equal(readingOrder([box("1,480mg", 120, 50), box("Sodium", 10, 51)]), "Sodium 1,480mg");
+// Different lines stay different lines, in top-to-bottom order.
+assert.equal(
+  readingOrder([box("Protein", 10, 90), box("Sodium", 10, 50)]),
+  "Sodium\nProtein"
+);
+// Blank detections are dropped rather than becoming stray spaces.
+assert.equal(readingOrder([box("  ", 10, 50), box("Sugar", 60, 50)]), "Sugar");
+assert.equal(readingOrder([]), "");
+// A slight tilt down the row must not split one line in two.
+assert.equal(
+  readingOrder([box("Total", 10, 50), box("Fat", 70, 53), box("9g", 130, 56)]),
+  "Total Fat 9g"
+);
 
 console.log("formats: all checks passed");

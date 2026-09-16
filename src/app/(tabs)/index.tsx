@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Typography } from "heroui-native";
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import { FlatList, Pressable, TextInput, View } from "react-native";
@@ -12,140 +12,339 @@ import Animated, {
 import type { Message } from "react-native-rag";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { IconButton } from "../../components/screen";
-import { ModelGate, systemPrompt, useAI } from "../../lib/ai";
+import { IconButton, Mascot, PressCard } from "../../components/screen";
+import {
+  LENGTHS,
+  ModelGate,
+  TIERS,
+  getChat,
+  newChatId,
+  newNoteId,
+  reindexNote,
+  saveChat,
+  saveNoteText,
+  systemPrompt,
+  useAI,
+} from "../../lib/ai";
 import { useKeyboardHeight, usePalette } from "../../lib/theme";
 
 const SUGGESTIONS = [
-  "Summarise everything I saved this week",
-  "Quiz me on my notes",
-  "What did I write about deadlines?",
-];
+  { icon: "sparkles-outline", text: "Summarise everything I saved this week" },
+  { icon: "help-circle-outline", text: "Quiz me on my notes" },
+  { icon: "search-outline", text: "What did I write about deadlines?" },
+] as const;
+
+/** A note or pack the answer was grounded in. */
+type Cite = { id: string; title: string };
 
 /**
- * The rule down the left of an answer. It carries the amber only while tokens
- * are arriving, which is the one job the accent colour has in this app — so
- * "the model is working" is legible from across the room, with no spinner.
+ * One turn. Richer than react-native-rag's `Message`, which is only role and
+ * content — the extras are display-only and are stripped before sending.
  */
-function AnswerRule({ live }: { live: boolean }): JSX.Element {
-  const pulse = useSharedValue(1);
+type Entry = {
+  role: "user" | "assistant";
+  content: string;
+  cites?: Cite[];
+  /** Wall-clock milliseconds and token count, so the speed claim is measured. */
+  ms?: number;
+  tokens?: number;
+};
+
+const asMessages = (entries: Entry[]): Message[] =>
+  entries.map(({ role, content }) => ({ role, content }));
+
+function Dot({ delay, color }: { delay: number; color: string }): JSX.Element {
+  const value = useSharedValue(0.25);
 
   useEffect(() => {
-    pulse.value = live
-      ? withRepeat(withTiming(0.25, { duration: 620 }), -1, true)
-      : withTiming(1, { duration: 200 });
-  }, [live, pulse]);
+    const id = setTimeout(() => {
+      value.value = withRepeat(withTiming(1, { duration: 480 }), -1, true);
+    }, delay);
+    return () => clearTimeout(id);
+  }, [delay, value]);
 
-  const style = useAnimatedStyle(() => ({ opacity: pulse.value }));
+  const style = useAnimatedStyle(() => ({ opacity: value.value }));
 
   return (
     <Animated.View
-      style={style}
-      className={`w-[3px] rounded-full ${live ? "bg-accent" : "bg-separator"}`}
+      style={[style, { width: 7, height: 7, borderRadius: 7, backgroundColor: color }]}
     />
   );
 }
 
-function Turn({ message, live }: { message: Message; live: boolean }): JSX.Element {
+/**
+ * Three amber dots while tokens are arriving. Amber is the app's "working"
+ * signal — see the colour note in global.css — so this reads the same as the
+ * status card and the active tab.
+ */
+function Thinking(): JSX.Element {
+  const palette = usePalette();
+
+  return (
+    <View className="flex-row items-center gap-2 rounded-[18px] rounded-bl-md border border-border bg-surface px-4 py-3.5">
+      {[0, 1, 2].map((index) => (
+        <Dot key={index} delay={index * 160} color={palette.warning} />
+      ))}
+      <Typography.Paragraph className="ml-1 font-ui-medium text-[11px] text-muted">
+        Thinking on device…
+      </Typography.Paragraph>
+    </View>
+  );
+}
+
+function Turn({
+  entry,
+  onSave,
+  onRegenerate,
+  saved,
+}: {
+  entry: Entry;
+  onSave: () => void;
+  onRegenerate: () => void;
+  saved: boolean;
+}): JSX.Element {
+  const palette = usePalette();
+  const router = useRouter();
+
   // A person's words and a machine's words are set differently on purpose: the
-  // question stays a compact grotesk bubble, the answer is serif prose laid
-  // flat on the page like something you would read rather than skim.
-  if (message.role === "user") {
+  // question is a compact grotesk bubble, the answer is serif prose in a card
+  // — something you read rather than skim.
+  if (entry.role === "user") {
     return (
-      <View className="my-2 max-w-[82%] self-end rounded-2xl rounded-br-md bg-surface-tertiary px-4 py-2.5">
-        <Typography.Paragraph className="font-ui text-[15px] leading-[21px]">
-          {message.content}
+      <View className="my-2 max-w-[82%] self-end rounded-[18px] rounded-br-md bg-accent px-3.5 py-2.5">
+        <Typography.Paragraph
+          className="font-ui text-[13.5px] leading-[20px]"
+          style={{ color: palette.accentForeground }}
+        >
+          {entry.content}
         </Typography.Paragraph>
       </View>
     );
   }
 
   return (
-    <View className="my-2.5 flex-row gap-3 pr-2">
-      <AnswerRule live={live} />
-      <Typography.Paragraph className="flex-1 font-read text-[17px] leading-[26px]">
-        {message.content === "" && live ? "Thinking…" : message.content}
-      </Typography.Paragraph>
+    <View className="my-2.5 flex-row gap-2.5">
+      <Mascot size={30} />
+      <View className="flex-1 rounded-[18px] rounded-bl-md border border-border bg-surface px-3.5 py-3">
+        <Typography.Paragraph className="font-read text-[14.5px] leading-[23px]">
+          {entry.content}
+        </Typography.Paragraph>
+
+        {entry.cites && entry.cites.length > 0 && (
+          <View className="mt-2.5 flex-row flex-wrap gap-1.5">
+            {entry.cites.map((cite) => (
+              <Pressable
+                key={cite.id}
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${cite.title}`}
+                onPress={() => router.push({ pathname: "/note/[id]", params: { id: cite.id } })}
+                className="flex-row items-center gap-1.5 rounded-full bg-on-device-soft px-2.5 py-1 active:opacity-70"
+              >
+                <Ionicons name="document-text" size={12} color={palette.onDevice} />
+                <Typography.Paragraph
+                  className="max-w-[150px] font-ui-medium text-[10.5px] text-on-device"
+                  numberOfLines={1}
+                >
+                  {cite.title}
+                </Typography.Paragraph>
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        <View className="mt-2.5 flex-row items-center gap-1 border-t border-separator pt-1.5">
+          <IconButton
+            name={saved ? "bookmark" : "bookmark-outline"}
+            label={saved ? "Saved as a note" : "Save as a note"}
+            tone={saved ? "accent" : "muted"}
+            disabled={saved}
+            onPress={onSave}
+          />
+          <IconButton
+            name="refresh-outline"
+            label="Answer again"
+            tone="muted"
+            onPress={onRegenerate}
+          />
+          <View className="flex-1" />
+          {entry.ms !== undefined && entry.tokens !== undefined && entry.ms > 0 && (
+            <Typography.Paragraph className="font-ui text-[10px] text-muted-soft">
+              {(entry.ms / 1000).toFixed(1)}s · {Math.round((entry.tokens / entry.ms) * 1000)} tok/s
+            </Typography.Paragraph>
+          )}
+        </View>
+      </View>
     </View>
   );
 }
 
 function Chat(): JSX.Element {
-  const { rag, settings } = useAI();
+  const { rag, db, tier, settings, invalidate } = useAI();
   const router = useRouter();
   const palette = usePalette();
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardHeight();
 
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [entries, setEntries] = useState<Entry[]>([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState<string | null>(null);
   const [useNotes, setUseNotes] = useState(true);
-  const listRef = useRef<FlatList<Message>>(null);
+  const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
+  const listRef = useRef<FlatList<Entry>>(null);
+  // One id per conversation, so every answer upserts the same row instead of
+  // leaving a trail of one-turn chats on the dashboard.
+  const chatId = useRef(newChatId());
 
   const busy = streaming !== null;
 
-  const send = useCallback(async () => {
-    const input = draft.trim();
-    if (!rag || !input || busy) return;
+  // Opened from the dashboard with ?chat=<id>: pick that conversation back up.
+  const { chat: resume } = useLocalSearchParams<{ chat?: string }>();
+  useEffect(() => {
+    if (!db || !resume) return;
+    void getChat(db, resume).then((body) => {
+      if (!body) return;
+      chatId.current = resume;
+      setEntries(body as Entry[]);
+      setSavedIds(new Set());
+    });
+  }, [db, resume]);
 
-    const history: Message[] = [...messages, { role: "user", content: input }];
-    setMessages(history);
-    setDraft("");
-    setStreaming("");
+  const ask = useCallback(
+    async (question: string, history: Entry[]) => {
+      if (!rag || !question || busy) return;
 
-    let answer = "";
-    try {
-      await rag.generate({
-        // The system message is prepended per call rather than baked into the
-        // model, so changing a setting takes effect on the next question
-        // instead of forcing a reload.
-        input: [{ role: "system", content: systemPrompt(settings) }, ...history],
-        augmentedGeneration: useNotes,
-        callback: (token) => {
-          answer += token;
-          setStreaming(answer);
-        },
+      const asked: Entry[] = [...history, { role: "user", content: question }];
+      setEntries(asked);
+      setDraft("");
+      setStreaming("");
+
+      // Retrieval happens inside generate() and the docs are never returned,
+      // but promptGenerator is handed them — so a closure captures the sources
+      // without paying for a second query.
+      let cites: Cite[] = [];
+      let answer = "";
+      let tokens = 0;
+      const started = Date.now();
+
+      try {
+        await rag.generate({
+          // The system message is prepended per call rather than baked into the
+          // model, so changing a setting takes effect on the next question
+          // instead of forcing a reload.
+          input: [{ role: "system", content: systemPrompt(settings) }, ...asMessages(asked)],
+          augmentedGeneration: useNotes,
+          promptGenerator: (messages, docs) => {
+            const seen = new Set<string>();
+            cites = docs.flatMap((doc) => {
+              const id = doc.metadata?.sourceId as string | undefined;
+              const title = doc.metadata?.title as string | undefined;
+              if (!id || seen.has(id)) return [];
+              seen.add(id);
+              return [{ id, title: title || "Untitled" }];
+            });
+            // The same shape the library's own default builds.
+            const last = messages[messages.length - 1];
+            return `Message: ${last?.content ?? ""}\nContext: ${docs
+              .map((doc) => doc.document)
+              .join("\n")}`;
+          },
+          callback: (token) => {
+            answer += token;
+            tokens += 1;
+            setStreaming(answer);
+          },
+        });
+        const finished: Entry[] = [
+          ...asked,
+          { role: "assistant", content: answer, cites, ms: Date.now() - started, tokens },
+        ];
+        setEntries(finished);
+        if (db) {
+          await saveChat(db, {
+            id: chatId.current,
+            title: asked.find((entry) => entry.role === "user")?.content.slice(0, 80) ?? "Chat",
+            body: finished,
+          });
+          invalidate();
+        }
+      } catch (error) {
+        setEntries([
+          ...asked,
+          {
+            role: "assistant",
+            content: `Couldn't answer that: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+        ]);
+      } finally {
+        setStreaming(null);
+      }
+    },
+    [rag, db, busy, useNotes, settings, invalidate]
+  );
+
+  /** Drops the last answer and asks the same question again. */
+  const regenerate = useCallback(
+    (index: number) => {
+      const question = entries[index - 1];
+      if (!question || question.role !== "user" || busy) return;
+      void ask(question.content, entries.slice(0, index - 1));
+    },
+    [entries, busy, ask]
+  );
+
+  const saveAnswer = useCallback(
+    async (index: number) => {
+      const answer = entries[index];
+      const question = entries[index - 1];
+      if (!db || !rag || !answer) return;
+
+      const id = newNoteId();
+      await saveNoteText(db, {
+        id,
+        title: question?.content.slice(0, 60) ?? "Saved answer",
+        body: answer.content,
       });
-      setMessages([...history, { role: "assistant", content: answer }]);
-    } catch (error) {
-      setMessages([
-        ...history,
-        {
-          role: "assistant",
-          content: `Couldn't answer that: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ]);
-    } finally {
-      setStreaming(null);
-    }
-  }, [rag, draft, busy, messages, useNotes, settings]);
+      await reindexNote(rag, db, id);
+      setSavedIds((previous) => new Set(previous).add(index));
+      invalidate();
+    },
+    [entries, db, rag, invalidate]
+  );
 
-  const shown: Message[] =
-    streaming === null ? messages : [...messages, { role: "assistant", content: streaming }];
+  const shown: Entry[] =
+    streaming === null ? entries : [...entries, { role: "assistant", content: streaming }];
 
   return (
     <View className="flex-1 bg-background">
-      <View
-        className="flex-row items-center justify-between px-3 pb-1"
-        style={{ paddingTop: insets.top + 6 }}
-      >
+      <View className="flex-row items-center gap-1 px-3 pb-1" style={{ paddingTop: insets.top + 6 }}>
         <Typography.Heading
           type="h1"
-          className="flex-1 pl-1 font-ui-bold text-[30px] tracking-tight"
+          className="flex-1 pl-1 font-ui-bold text-[26px] tracking-tight"
         >
           Ask
         </Typography.Heading>
-        <IconButton
-          name="options-outline"
-          label="AI behaviour settings"
-          onPress={() => router.push("/settings")}
-        />
+        {tier && (
+          <View className="mr-1 flex-row items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-1">
+            <View
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ backgroundColor: palette.onDevice }}
+            />
+            <Typography.Paragraph className="font-ui-medium text-[10.5px] text-on-device">
+              {TIERS[tier].label} · offline
+            </Typography.Paragraph>
+          </View>
+        )}
         <IconButton
           name="create-outline"
           label="Start a new chat"
-          disabled={busy || messages.length === 0}
-          onPress={() => setMessages([])}
+          disabled={busy || entries.length === 0}
+          onPress={() => {
+            setEntries([]);
+            setSavedIds(new Set());
+            chatId.current = newChatId();
+          }}
         />
       </View>
 
@@ -154,35 +353,76 @@ function Chat(): JSX.Element {
         className="flex-1 px-4"
         data={shown}
         keyExtractor={(_, index) => String(index)}
-        renderItem={({ item, index }) => (
-          <Turn message={item} live={busy && index === shown.length - 1} />
-        )}
+        renderItem={({ item, index }) =>
+          item.role === "assistant" && item.content === "" ? (
+            <View className="my-2.5 flex-row gap-2.5">
+              <Mascot size={30} />
+              <Thinking />
+            </View>
+          ) : (
+            <Turn
+              entry={item}
+              saved={savedIds.has(index)}
+              onSave={() => void saveAnswer(index)}
+              onRegenerate={() => regenerate(index)}
+            />
+          )
+        }
+        ListHeaderComponent={
+          entries.length > 0 && useNotes ? (
+            <View className="my-2 self-center rounded-full bg-surface-tertiary px-3 py-1.5">
+              <Typography.Paragraph className="font-ui-medium text-[10px] text-muted">
+                Reading your notes · answers stay on this phone
+              </Typography.Paragraph>
+            </View>
+          ) : null
+        }
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         ListEmptyComponent={
-          <View className="gap-6 pt-8">
-            <Typography.Paragraph className="font-read text-[19px] leading-[28px] text-muted">
-              Everything here runs on the phone. Your questions, your notes and the model never
-              leave it.
-            </Typography.Paragraph>
+          <View className="gap-4 pt-4">
+            {/* Illustration slot. Drop the finished mascot art in here. */}
+            <View className="items-center justify-center gap-2.5 rounded-3xl border border-dashed border-border py-7">
+              <Mascot size={64} />
+              <Typography.Paragraph className="font-ui text-[10.5px] text-muted-soft">
+                illustration slot · owl with an open book
+              </Typography.Paragraph>
+            </View>
 
-            <View className="overflow-hidden rounded-2xl border border-border bg-surface">
-              {SUGGESTIONS.map((text, index) => (
-                <Pressable
-                  key={text}
-                  accessibilityRole="button"
-                  onPress={() => setDraft(text)}
-                  className={`min-h-[52px] flex-row items-center gap-3 px-4 py-3.5 active:bg-surface-tertiary ${
-                    index > 0 ? "border-t border-border" : ""
-                  }`}
+            <View className="gap-2">
+              <Typography.Heading type="h2" className="font-ui-bold text-[22px] tracking-tight">
+                What would you like to learn today?
+              </Typography.Heading>
+              <Typography.Paragraph className="font-read text-[14px] leading-[22px] text-muted-strong">
+                Answers come from the notes on this phone. No account, no network — try it in
+                airplane mode.
+              </Typography.Paragraph>
+            </View>
+
+            <View className="gap-2">
+              {SUGGESTIONS.map((suggestion) => (
+                <PressCard
+                  key={suggestion.text}
+                  className="px-3.5 py-3"
+                  onPress={() => setDraft(suggestion.text)}
                 >
-                  <Typography.Paragraph className="flex-1 font-ui text-[15px]">
-                    {text}
-                  </Typography.Paragraph>
-                  <Ionicons name="arrow-forward" size={15} color={palette.muted} />
-                </Pressable>
+                  <View className="flex-row items-center gap-2.5">
+                    <Ionicons name={suggestion.icon} size={18} color={palette.accent} />
+                    <Typography.Paragraph className="flex-1 font-ui-medium text-[13px] leading-[18px]">
+                      {suggestion.text}
+                    </Typography.Paragraph>
+                    <Ionicons name="arrow-forward" size={15} color={palette.mutedSoft} />
+                  </View>
+                </PressCard>
               ))}
+            </View>
+
+            <View className="flex-row items-center gap-2.5 rounded-2xl border border-warning-border bg-warning-soft p-3">
+              <Ionicons name="bulb-outline" size={17} color={palette.warning} />
+              <Typography.Paragraph className="flex-1 font-read text-[12px] leading-[19px] text-muted-strong">
+                Answers get sharper the more notes you keep. One note is enough to start.
+              </Typography.Paragraph>
             </View>
           </View>
         }
@@ -194,30 +434,44 @@ function Chat(): JSX.Element {
         className="gap-2.5 border-t border-border bg-surface px-4 pb-3 pt-3"
         style={{ marginBottom: keyboard }}
       >
-        <Pressable
-          accessibilityRole="switch"
-          accessibilityState={{ checked: useNotes }}
-          onPress={() => setUseNotes((on) => !on)}
-          className={`min-h-[36px] flex-row items-center gap-1.5 self-start rounded-full border px-3 ${
-            useNotes ? "border-accent" : "border-border"
-          }`}
-        >
-          <Ionicons
-            name={useNotes ? "layers" : "layers-outline"}
-            size={14}
-            color={useNotes ? palette.accent : palette.muted}
-          />
-          <Typography.Paragraph
-            className={`font-ui-medium text-[12px] ${useNotes ? "text-accent" : "text-muted"}`}
+        <View className="flex-row items-center gap-2">
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityState={{ checked: useNotes }}
+            onPress={() => setUseNotes((on) => !on)}
+            className={`min-h-[34px] flex-row items-center gap-1.5 rounded-full border px-2.5 ${
+              useNotes ? "border-accent bg-accent-soft" : "border-border"
+            }`}
           >
-            {useNotes ? "Reading your notes" : "Notes off"}
-          </Typography.Paragraph>
-        </Pressable>
+            <Ionicons
+              name={useNotes ? "layers" : "layers-outline"}
+              size={14}
+              color={useNotes ? palette.accent : palette.muted}
+            />
+            <Typography.Paragraph
+              className={`font-ui-medium text-[11px] ${useNotes ? "text-accent" : "text-muted"}`}
+            >
+              {useNotes ? "Reading notes" : "Notes off"}
+            </Typography.Paragraph>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Change answer length and tone"
+            onPress={() => router.push("/settings")}
+            className="min-h-[34px] flex-row items-center gap-1.5 rounded-full border border-border px-2.5"
+          >
+            <Ionicons name="options-outline" size={14} color={palette.muted} />
+            <Typography.Paragraph className="font-ui-medium text-[11px] text-muted">
+              {LENGTHS[settings.length].label}
+            </Typography.Paragraph>
+          </Pressable>
+        </View>
 
         <View className="flex-row items-end gap-2">
           <TextInput
-            className="max-h-32 min-h-[44px] flex-1 rounded-2xl border border-border bg-background px-4 py-2.5 font-ui text-[16px] text-foreground"
-            placeholder="Ask anything"
+            className="max-h-32 min-h-[46px] flex-1 rounded-[20px] border border-border bg-background px-4 py-2.5 font-ui text-[15px] text-foreground"
+            placeholder="Ask anything…"
             placeholderTextColor={palette.placeholder}
             value={draft}
             onChangeText={setDraft}
@@ -226,9 +480,9 @@ function Chat(): JSX.Element {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={busy ? "Stop generating" : "Send"}
-            onPress={() => (busy ? void rag?.interrupt() : void send())}
+            onPress={() => (busy ? void rag?.interrupt() : void ask(draft.trim(), entries))}
             disabled={!busy && !draft.trim()}
-            className={`h-12 w-12 items-center justify-center rounded-full ${
+            className={`h-[46px] w-[46px] items-center justify-center rounded-full ${
               busy ? "bg-surface-tertiary" : "bg-accent"
             }`}
             style={{ opacity: !busy && !draft.trim() ? 0.35 : 1 }}

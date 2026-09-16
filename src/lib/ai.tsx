@@ -230,6 +230,25 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
              updatedAt TEXT NOT NULL
            )`
         );
+        await db.execute(
+          `CREATE TABLE IF NOT EXISTS chats (
+             id        TEXT PRIMARY KEY,
+             title     TEXT NOT NULL,
+             body      TEXT NOT NULL,
+             turns     INTEGER NOT NULL,
+             updatedAt TEXT NOT NULL
+           )`
+        );
+        await db.execute(
+          `CREATE TABLE IF NOT EXISTS quiz_results (
+             id      TEXT PRIMARY KEY,
+             noteId  TEXT NOT NULL,
+             title   TEXT NOT NULL,
+             score   INTEGER NOT NULL,
+             total   INTEGER NOT NULL,
+             takenAt TEXT NOT NULL
+           )`
+        );
         await backfillNotes(db);
         if (cancelled) return;
 
@@ -625,4 +644,110 @@ export async function deleteSource(db: DB, sourceId: string): Promise<void> {
   await db.execute("DELETE FROM vectors WHERE json_extract(metadata, '$.sourceId') = ?", [
     sourceId,
   ]);
+}
+
+/* -------------------------------------------------------------------------
+   Chats and quiz results
+   Both exist so the dashboard can show true numbers. A conversation is stored
+   as one JSON blob rather than a messages table: it is only ever read and
+   written whole, so a second table would buy a join and nothing else.
+   ------------------------------------------------------------------------- */
+
+export type ChatSummary = { id: string; title: string; turns: number; updatedAt: string };
+export type QuizResult = {
+  id: string;
+  noteId: string;
+  title: string;
+  score: number;
+  total: number;
+  takenAt: string;
+};
+
+export function newChatId(): string {
+  return uuidv4();
+}
+
+/** Upsert. Called once per completed answer, so the row is never half a turn. */
+export async function saveChat(
+  db: DB,
+  chat: { id: string; title: string; body: unknown[] }
+): Promise<void> {
+  await db.execute(
+    `INSERT INTO chats (id, title, body, turns, updatedAt) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET title = excluded.title,
+                                   body = excluded.body,
+                                   turns = excluded.turns,
+                                   updatedAt = excluded.updatedAt`,
+    [chat.id, chat.title, JSON.stringify(chat.body), chat.body.length, new Date().toISOString()]
+  );
+}
+
+export async function listChats(db: DB, limit = 20): Promise<ChatSummary[]> {
+  const result = await db.execute(
+    "SELECT id, title, turns, updatedAt FROM chats ORDER BY updatedAt DESC LIMIT ?",
+    [limit]
+  );
+  return result.rows as unknown as ChatSummary[];
+}
+
+/** The stored turns, or null if the row is gone or the blob is unreadable. */
+export async function getChat(db: DB, id: string): Promise<unknown[] | null> {
+  const result = await db.execute("SELECT body FROM chats WHERE id = ?", [id]);
+  const body = (result.rows[0] as { body?: string } | undefined)?.body;
+  if (typeof body !== "string") return null;
+  try {
+    const parsed: unknown = JSON.parse(body);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    // A corrupt blob is not worth failing the screen over.
+    return null;
+  }
+}
+
+export async function deleteChat(db: DB, id: string): Promise<void> {
+  await db.execute("DELETE FROM chats WHERE id = ?", [id]);
+}
+
+export async function saveQuizResult(
+  db: DB,
+  result: { noteId: string; title: string; score: number; total: number }
+): Promise<void> {
+  await db.execute(
+    "INSERT INTO quiz_results (id, noteId, title, score, total, takenAt) VALUES (?, ?, ?, ?, ?, ?)",
+    [
+      uuidv4(),
+      result.noteId,
+      result.title,
+      result.score,
+      result.total,
+      new Date().toISOString(),
+    ]
+  );
+}
+
+export async function listQuizResults(db: DB, limit = 20): Promise<QuizResult[]> {
+  const result = await db.execute("SELECT * FROM quiz_results ORDER BY takenAt DESC LIMIT ?", [
+    limit,
+  ]);
+  return result.rows as unknown as QuizResult[];
+}
+
+/**
+ * Notes whose most recent quiz went badly, worst first.
+ *
+ * SQLite lets a bare column ride along with MAX() and picks the row the max
+ * came from, so this is the latest attempt per note rather than a blend of
+ * attempts — which is the number worth acting on.
+ */
+export async function weakTopics(db: DB, limit = 3): Promise<QuizResult[]> {
+  const result = await db.execute(
+    `SELECT id, noteId, title, score, total, MAX(takenAt) AS takenAt
+       FROM quiz_results
+      GROUP BY noteId
+     HAVING total > 0 AND (score * 1.0 / total) < 0.6
+      ORDER BY (score * 1.0 / total) ASC
+      LIMIT ?`,
+    [limit]
+  );
+  return result.rows as unknown as QuizResult[];
 }

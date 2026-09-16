@@ -27,7 +27,7 @@
         {
           "image": "./assets/images/splash-icon.png",
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#fff6ef"
         }
       ],
       "expo-status-bar",
@@ -42,6 +42,13 @@
             "android.permission.FOREGROUND_SERVICE",
             "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
           ]
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Offline AI reads a nutrition label from a photo you choose. The image is processed on this device and never uploaded.",
+          "cameraPermission": "Offline AI reads a nutrition label you photograph. The image is processed on this device and never uploaded."
         }
       ]
     ],

@@ -239,3 +239,76 @@ export function parseFlashcards(text: string): Flashcard[] {
 
   return cards;
 }
+
+/**
+ * How long ago, in the words a person would use. Falls back to a plain date
+ * once "N days ago" stops being easier to read than the date itself.
+ */
+export function relativeDate(iso: string): string {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+  return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+/** First non-empty line of a note body, for a list preview. */
+export function preview(body: string): string {
+  const line = body.split("\n").find((candidate) => candidate.trim() !== "");
+  return line?.trim() ?? "Empty note";
+}
+
+/** The shape `useOCR` hands back, narrowed to what reading order needs. */
+export type OcrBox = { bbox: { x1: number; y1: number; x2: number; y2: number }; text: string };
+
+/**
+ * Turns unordered OCR boxes into the text a person would read.
+ *
+ * The recogniser returns each detected word with a box and no sense of
+ * sequence, so a nutrition panel comes back shuffled. Boxes are grouped into
+ * lines by how far their vertical centres sit apart — measured against the
+ * median box height, so it works the same on a close-up and on a photo taken
+ * from across a table — then each line is sorted left to right.
+ *
+ * ponytail: greedy single pass, no column detection. A two-column panel will
+ * read across rather than down. Upgrade to clustering on x if that turns out
+ * to matter on real labels.
+ */
+export function readingOrder(boxes: readonly OcrBox[], tolerance = 0.6): string {
+  const rows = boxes
+    .filter((box) => box.text.trim() !== "")
+    .map((box) => ({
+      text: box.text.trim(),
+      mid: (box.bbox.y1 + box.bbox.y2) / 2,
+      height: Math.abs(box.bbox.y2 - box.bbox.y1),
+      left: Math.min(box.bbox.x1, box.bbox.x2),
+    }))
+    .sort((a, b) => a.mid - b.mid);
+
+  if (rows.length === 0) return "";
+
+  const heights = rows.map((row) => row.height).sort((a, b) => a - b);
+  // Median, not mean: one stray tall box should not stretch every threshold.
+  const gap = (heights[Math.floor(heights.length / 2)] || 1) * tolerance;
+
+  const lines: (typeof rows)[] = [];
+  for (const row of rows) {
+    const current = lines[lines.length - 1];
+    // Compared against the line's running centre rather than its first box, so
+    // a slightly rotated label does not split halfway along.
+    const centre = current
+      ? current.reduce((sum, item) => sum + item.mid, 0) / current.length
+      : 0;
+    if (current && Math.abs(row.mid - centre) <= gap) current.push(row);
+    else lines.push([row]);
+  }
+
+  return lines
+    .map((line) =>
+      line
+        .sort((a, b) => a.left - b.left)
+        .map((row) => row.text)
+        .join(" ")
+    )
+    .join("\n");
+}

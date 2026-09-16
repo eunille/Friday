@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Typography } from "heroui-native";
-import type { ComponentProps, JSX, ReactNode } from "react";
+import { useState, type ComponentProps, type JSX, type ReactNode } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -231,5 +231,86 @@ export function SectionTitle({ children }: { children: ReactNode }): JSX.Element
     <Typography.Heading type="h3" className="font-ui-bold text-[17px]">
       {children}
     </Typography.Heading>
+  );
+}
+
+/**
+ * A card that visibly takes a press: it sits on a hard 3pt lip of its own
+ * colour and drops onto it when touched.
+ *
+ * ponytail: a backing view, not a CSS boxShadow string. RN accepts the string
+ * but Android's rendering of a zero-blur shadow is inconsistent, and this is
+ * the redesign's signature affordance — worth the one extra view to have it
+ * render the same everywhere. Total height does not change on press, so
+ * nothing below it moves.
+ */
+export function PressCard({
+  children,
+  onPress,
+  className = "p-3.5",
+}: {
+  children: ReactNode;
+  onPress?: () => void;
+  className?: string;
+}): JSX.Element {
+  const palette = usePalette();
+  const [down, setDown] = useState(false);
+
+  return (
+    <Pressable
+      accessibilityRole={onPress ? "button" : undefined}
+      disabled={!onPress}
+      onPress={onPress}
+      onPressIn={() => setDown(true)}
+      onPressOut={() => setDown(false)}
+      style={{
+        borderRadius: 20,
+        backgroundColor: palette.pressOffset,
+        marginTop: down ? 3 : 0,
+        paddingBottom: down ? 0 : 3,
+      }}
+    >
+      <View className={`rounded-[20px] border border-border bg-surface ${className}`}>
+        {children}
+      </View>
+    </Pressable>
+  );
+}
+
+/**
+ * The app's one persistent claim: this ran here, nothing left the phone.
+ * Teal carries it everywhere — see the colour note in global.css.
+ */
+export function OnDeviceChip({ label }: { label: string }): JSX.Element {
+  const palette = usePalette();
+
+  return (
+    <View className="flex-row items-center gap-1.5 self-start rounded-full bg-on-device-soft px-2.5 py-1">
+      <View className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: palette.onDevice }} />
+      <Typography.Paragraph className="font-ui-medium text-[10.5px] text-on-device">
+        {label}
+      </Typography.Paragraph>
+    </View>
+  );
+}
+
+/**
+ * Stand-in for the mascot until there is artwork. Deliberately crude, so that
+ * nobody mistakes it for the finished thing.
+ */
+export function Mascot({ size = 46 }: { size?: number }): JSX.Element {
+  const palette = usePalette();
+  const eye = Math.round(size * 0.24);
+
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      className="flex-row items-center justify-center rounded-full bg-accent-soft"
+      style={{ width: size, height: size, borderWidth: 2, borderColor: palette.accent, gap: 5 }}
+    >
+      <View style={{ width: eye, height: eye, borderRadius: eye, backgroundColor: palette.ink }} />
+      <View style={{ width: eye, height: eye, borderRadius: eye, backgroundColor: palette.ink }} />
+    </View>
   );
 }

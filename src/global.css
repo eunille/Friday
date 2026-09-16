@@ -24,13 +24,24 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Colour — "cold storage"
-   The ground is cool steel, never warm: this app's whole point is that it sits
-   inert with the radio off. Exactly one hue lights up, an amber reserved for
-   the model doing work — streaming tokens, retrieval scores, the offline
-   badge. Nothing decorative is allowed to spend it, or it stops meaning
-   anything. Light and dark carry different ambers because one value cannot
-   clear contrast on both grounds.
+   Colour — warm ground, three signals
+
+   The ground is warm paper. Three hues carry meaning and nothing else may
+   spend them:
+
+     orange  --accent      what you can press, and what you said
+     teal    --on-device   this ran on your phone; no network was used
+     amber   --warning     the model is working, or something needs care
+
+   This replaces the old rule where amber alone meant "model working". Orange
+   is now the brand colour — it is on every button and every tab — so it can no
+   longer signal anything. Teal took over the offline claim, which is the
+   claim this app actually makes, and amber narrowed to work-in-progress and
+   caution. Spend a signal hue decoratively and it stops meaning anything.
+
+   --ink is the one surface that stays dark in both schemes: the status card
+   and the scan dock. It is the app asserting "this is a device, not a cloud",
+   so it must not dissolve into the background when the scheme flips.
 
    Same @layer as heroui's own tokens and imported after them, so these win on
    source order without an escalation war.
@@ -38,100 +49,134 @@
 @layer theme {
   :root {
     @variant light {
-      --background: #edf0f3;
-      --foreground: #15202b;
+      --background: #fff6ef;
+      --foreground: #241812;
 
       --surface: #ffffff;
       --surface-foreground: var(--foreground);
-      --surface-secondary: #e4e9ee;
+      --surface-secondary: #fdf0e6;
       --surface-secondary-foreground: var(--foreground);
-      --surface-tertiary: #d9e0e7;
+      --surface-tertiary: #f5e9e0;
       --surface-tertiary-foreground: var(--foreground);
 
       --overlay: #ffffff;
       --overlay-foreground: var(--foreground);
-      --backdrop: rgba(21, 32, 43, 0.28);
+      --backdrop: rgba(36, 24, 18, 0.32);
 
-      --muted: #5d6e7e;
+      --muted: #8a7466;
+      --muted-strong: #7a6252;
+      --muted-soft: #b39f91;
 
-      --default: #e1e7ec;
+      --default: #f5e9e0;
       --default-foreground: var(--foreground);
 
-      --accent: #8a5a00;
+      --accent: #f2621b;
       --accent-foreground: #ffffff;
+      --accent-soft: #ffede1;
+      --accent-deep: #c7440a;
 
-      --field-background: #ffffff;
+      --on-device: #0b7f6c;
+      --on-device-foreground: #ffffff;
+      --on-device-soft: #ddf5f0;
+
+      --ink: #241812;
+      --ink-foreground: #ffffff;
+
+      --field-background: #fff6ef;
       --field-foreground: var(--foreground);
-      --field-placeholder: #7d8b99;
-      --field-border: #d5dce3;
+      --field-placeholder: #b39f91;
+      --field-border: #f0e2d7;
 
-      --success: #1f7a5c;
+      --success: #0e8c63;
       --success-foreground: #ffffff;
-      --warning: #8a5a00;
+      --warning: #b47100;
       --warning-foreground: #ffffff;
-      --danger: #b0261d;
+      --warning-soft: #fff3dc;
+      --warning-border: #fbe2b6;
+      --danger: #c13a1e;
       --danger-foreground: #ffffff;
+      --danger-soft: #ffe3dc;
 
       --segment: #ffffff;
       --segment-foreground: var(--foreground);
 
-      --border: #d5dce3;
-      --separator: #c2ccd5;
+      --border: #f0e2d7;
+      --separator: #f5e9e0;
       --focus: var(--accent);
-      --link: var(--accent);
+      --link: var(--accent-deep);
 
       /* Tinted toward the ink, not neutral grey — a pure-black shadow on a
-         cool ground reads muddy. */
-      --surface-shadow: 0 1px 2px 0 rgba(21, 32, 43, 0.05), 0 6px 16px -10px rgba(21, 32, 43, 0.14);
-      --overlay-shadow: 0 12px 32px -12px rgba(21, 32, 43, 0.22);
-      --field-shadow: 0 1px 1px 0 rgba(21, 32, 43, 0.04);
+         warm ground reads grubby. */
+      --surface-shadow: 0 1px 2px 0 rgba(36, 24, 18, 0.04), 0 6px 16px -10px rgba(36, 24, 18, 0.16);
+      --overlay-shadow: 0 12px 32px -12px rgba(36, 24, 18, 0.28);
+      --field-shadow: 0 0 0 0 transparent;
     }
 
+    /* Not in the mockups, which are light-only. Derived by keeping every
+       relationship the light scheme sets up: same warm family, orange
+       lightened until it clears text contrast on brown, and teal/amber taken
+       from the values the mockups already use *on* their dark cards. */
     @variant dark {
-      --background: #0e1620;
-      --foreground: #e7edf3;
+      --background: #1a100b;
+      --foreground: #f7ede5;
 
-      --surface: #16202c;
+      --surface: #241812;
       --surface-foreground: var(--foreground);
-      --surface-secondary: #1c2734;
+      --surface-secondary: #2e2019;
       --surface-secondary-foreground: var(--foreground);
-      --surface-tertiary: #24303e;
+      --surface-tertiary: #3a2920;
       --surface-tertiary-foreground: var(--foreground);
 
-      --overlay: #16202c;
+      --overlay: #241812;
       --overlay-foreground: var(--foreground);
-      --backdrop: rgba(5, 10, 16, 0.6);
+      --backdrop: rgba(10, 5, 3, 0.62);
 
-      --muted: #8b9bab;
+      --muted: #b39f91;
+      --muted-strong: #c8b5a7;
+      --muted-soft: #8a7466;
 
-      --default: #1c2734;
+      --default: #2e2019;
       --default-foreground: var(--foreground);
 
-      --accent: #ffc24d;
-      --accent-foreground: #101923;
+      --accent: #ff7a3d;
+      --accent-foreground: #1a100b;
+      --accent-soft: #3a2018;
+      --accent-deep: #ff9c6b;
 
-      --field-background: #16202c;
+      --on-device: #3ed6b5;
+      --on-device-foreground: #0a2b24;
+      --on-device-soft: #12352e;
+
+      /* Sunk below the ground rather than raised above it — on a brown scheme
+         the only way a "dark card" stays distinct is to go darker still. */
+      --ink: #0f0906;
+      --ink-foreground: #ffffff;
+
+      --field-background: #241812;
       --field-foreground: var(--foreground);
-      --field-placeholder: #75879a;
-      --field-border: #243040;
+      --field-placeholder: #8a7466;
+      --field-border: #3a2920;
 
-      --success: #4ecfa4;
-      --success-foreground: #0e1620;
-      --warning: #ffc24d;
-      --warning-foreground: #101923;
-      --danger: #ff6b60;
-      --danger-foreground: #140706;
+      --success: #3ed6b5;
+      --success-foreground: #0a2b24;
+      --warning: #ffb020;
+      --warning-foreground: #1a100b;
+      --warning-soft: #3a2a10;
+      --warning-border: #55401a;
+      --danger: #ff6b57;
+      --danger-foreground: #2b0a05;
+      --danger-soft: #3d1610;
 
-      --segment: #24303e;
+      --segment: #3a2920;
       --segment-foreground: var(--foreground);
 
-      --border: #243040;
-      --separator: #32404f;
+      --border: #3a2920;
+      --separator: #453128;
       --focus: var(--accent);
-      --link: var(--accent);
+      --link: var(--accent-deep);
 
       --surface-shadow: 0 0 0 0 transparent;
-      --overlay-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.7);
+      --overlay-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.72);
       --field-shadow: 0 0 0 0 transparent;
     }
   }

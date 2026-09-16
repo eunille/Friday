@@ -6,21 +6,8 @@ import { Pressable, View } from "react-native";
 
 import { Group, Screen, ScreenHeader } from "../../components/screen";
 import { ModelGate, listNotes, newNoteId, useAI, type Note } from "../../lib/ai";
+import { preview, relativeDate } from "../../lib/formats";
 import { usePalette } from "../../lib/theme";
-
-function relativeDate(iso: string): string {
-  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
-  if (days <= 0) return "Today";
-  if (days === 1) return "Yesterday";
-  if (days < 7) return `${days} days ago`;
-  return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
-}
-
-/** First non-empty line of the body, for the list preview. */
-function preview(body: string): string {
-  const line = body.split("\n").find((candidate) => candidate.trim() !== "");
-  return line?.trim() ?? "Empty note";
-}
 
 function Notes(): JSX.Element {
   const { db, revision } = useAI();

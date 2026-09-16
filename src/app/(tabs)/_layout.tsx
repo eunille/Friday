@@ -1,70 +1,24 @@
-import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import type { JSX } from "react";
-import { useColorScheme } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { NAV_THEME } from "../../lib/theme";
+import { Dock } from "../../components/dock";
 
 /**
- * Each tab names one glyph and takes the filled form when selected. Swapping
- * the weight reads faster than a colour change alone, which is how both
- * platforms' own tab bars behave.
+ * Five slots, drawn by `Dock`. The order and the labels live there; this file
+ * only says which routes exist and which of them the bar may show.
  */
-const TABS = [
-  { name: "index", title: "Ask", icon: "chatbubble" },
-  { name: "notes", title: "Notes", icon: "document-text" },
-  { name: "search", title: "Search", icon: "search" },
-  { name: "library", title: "Library", icon: "albums" },
-] as const;
-
 export default function TabsLayout(): JSX.Element {
-  const palette = NAV_THEME[useColorScheme() === "dark" ? "dark" : "light"];
-  const insets = useSafeAreaInsets();
-
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        // The bar would otherwise sit between the keyboard and the field you
-        // are typing into, stealing 62pt from the thing you need to see.
-        tabBarHideOnKeyboard: true,
-        tabBarActiveTintColor: palette.accent,
-        tabBarInactiveTintColor: palette.muted,
-        tabBarStyle: {
-          backgroundColor: palette.surface,
-          borderTopColor: palette.border,
-          borderTopWidth: 1,
-          // Default RN elevation paints a grey smear over the hairline; the
-          // border alone is the separation.
-          elevation: 0,
-          // Android draws this app edge to edge, so the system back/home/recents
-          // bar sits on top of whatever is at the bottom. Grow the tab bar by
-          // that inset and pad it out, or the icons share a row with them.
-          height: 62 + insets.bottom,
-          paddingTop: 6,
-          paddingBottom: insets.bottom,
-        },
-        tabBarLabelStyle: {
-          fontFamily: "Archivo_500Medium",
-          fontSize: 11,
-          letterSpacing: 0.2,
-          marginTop: 2,
-        },
-      }}
-    >
-      {TABS.map(({ name, title, icon }) => (
-        <Tabs.Screen
-          key={name}
-          name={name}
-          options={{
-            title,
-            tabBarIcon: ({ color, focused }) => (
-              <Ionicons name={focused ? icon : `${icon}-outline`} size={23} color={color} />
-            ),
-          }}
-        />
-      ))}
+    <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <Dock {...props} />}>
+      <Tabs.Screen name="home" />
+      <Tabs.Screen name="index" />
+      <Tabs.Screen name="scan" />
+      <Tabs.Screen name="notes" />
+      <Tabs.Screen name="library" />
+      {/* Semantic search is the app's best trick but it is a destination, not a
+          place you live, and there are only five slots. It keeps its route and
+          is reached from Home. */}
+      <Tabs.Screen name="search" options={{ href: null }} />
     </Tabs>
   );
 }

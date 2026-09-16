@@ -1,11 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Button, Spinner, Typography } from "heroui-native";
-import { useCallback, useEffect, useState, type JSX } from "react";
+import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import { Pressable, View } from "react-native";
 
 import { ChoiceRow, Group, PageHeader, PageScroll, SectionTitle } from "../../components/screen";
-import { ModelGate, getNote, useAI } from "../../lib/ai";
+import { ModelGate, getNote, saveQuizResult, useAI } from "../../lib/ai";
 import { clampForPrompt, parseFlashcards, parseQuiz } from "../../lib/formats";
 import { usePalette } from "../../lib/theme";
 
@@ -131,7 +131,7 @@ function Option({
 }
 
 function Quiz({ id }: { id: string }): JSX.Element {
-  const { rag, db } = useAI();
+  const { rag, db, invalidate } = useAI();
   const router = useRouter();
   const palette = usePalette();
 
@@ -200,6 +200,23 @@ function Quiz({ id }: { id: string }): JSX.Element {
   }, [phase, picked]);
 
   /* ---------------------------------------------------------------- setup */
+  // Recorded once, when the quiz ends. The dashboard reads these to work out
+  // which notes are worth another look, so a double-write would skew it.
+  const recorded = useRef(false);
+  useEffect(() => {
+    if (phase.kind !== "done" || recorded.current || !db) return;
+    recorded.current = true;
+    const correct = phase.answers.filter(
+      (answer, index) => answer === phase.items[index].correctIndex
+    ).length;
+    void saveQuizResult(db, {
+      noteId: id,
+      title: title || "Untitled",
+      score: correct,
+      total: phase.items.length,
+    }).then(invalidate);
+  }, [phase, db, id, title, invalidate]);
+
   if (phase.kind === "setup" || phase.kind === "failed") {
     return (
       <View className="flex-1 bg-background">
