@@ -26,7 +26,8 @@ import {
   systemPrompt,
   useAI,
 } from "../../lib/ai";
-import { useKeyboardHeight, usePalette } from "../../lib/theme";
+import { useDictation } from "../../lib/dictation";
+import { useKeyboardOverlap, usePalette } from "../../lib/theme";
 
 const SUGGESTIONS = [
   { icon: "sparkles-outline", text: "Summarise everything I saved this week" },
@@ -183,7 +184,7 @@ function Chat(): JSX.Element {
   const router = useRouter();
   const palette = usePalette();
   const insets = useSafeAreaInsets();
-  const keyboard = useKeyboardHeight();
+  const { overlap, onLayout } = useKeyboardOverlap();
 
   const [entries, setEntries] = useState<Entry[]>([]);
   const [draft, setDraft] = useState("");
@@ -196,6 +197,14 @@ function Chat(): JSX.Element {
   const chatId = useRef(newChatId());
 
   const busy = streaming !== null;
+
+  // Dictated words join the draft rather than sending straight away, so a
+  // misheard word can be fixed before the model ever sees it.
+  const dictation = useDictation(
+    useCallback((heard: string) => {
+      setDraft((prev) => (prev.trim() ? `${prev.trim()} ${heard}` : heard));
+    }, [])
+  );
 
   // Opened from the dashboard with ?chat=<id>: pick that conversation back up.
   const { chat: resume } = useLocalSearchParams<{ chat?: string }>();
@@ -317,7 +326,7 @@ function Chat(): JSX.Element {
     streaming === null ? entries : [...entries, { role: "assistant", content: streaming }];
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" onLayout={onLayout}>
       <View className="flex-row items-center gap-1 px-3 pb-1" style={{ paddingTop: insets.top + 6 }}>
         <Typography.Heading
           type="h1"
@@ -428,12 +437,36 @@ function Chat(): JSX.Element {
         }
       />
 
-      {/* Lifted by the measured keyboard height. Android draws this app edge to
-          edge, so the window is never resized and nothing moves on its own. */}
+      {/* Lifted by however much of the keyboard the system did not already
+          account for — see useKeyboardOverlap. Assuming either behaviour is
+          what kept putting this field back underneath the keys. */}
       <View
         className="gap-2.5 border-t border-border bg-surface px-4 pb-3 pt-3"
-        style={{ marginBottom: keyboard }}
+        style={{ marginBottom: overlap }}
       >
+        {(dictation.recording || dictation.working || dictation.notice) && (
+          <Pressable
+            accessibilityRole={dictation.notice ? "button" : undefined}
+            onPress={dictation.notice ? dictation.dismiss : undefined}
+            className="flex-row items-center gap-2 rounded-xl bg-warning-soft px-3 py-2"
+          >
+            <Ionicons
+              name={dictation.notice ? "alert-circle-outline" : "mic"}
+              size={14}
+              color={palette.warning}
+            />
+            <Typography.Paragraph className="flex-1 font-ui-medium text-[11px] text-muted-strong">
+              {dictation.notice
+                ? dictation.notice
+                : dictation.working
+                  ? "Writing down what you said…"
+                  : dictation.downloadProgress > 0 && dictation.downloadProgress < 1
+                    ? `Getting the voice model, once only · ${Math.round(dictation.downloadProgress * 100)}%`
+                    : "Listening — tap the square to stop"}
+            </Typography.Paragraph>
+          </Pressable>
+        )}
+
         <View className="flex-row items-center gap-2">
           <Pressable
             accessibilityRole="switch"
@@ -477,6 +510,27 @@ function Chat(): JSX.Element {
             onChangeText={setDraft}
             multiline
           />
+          {/* Dictation. Amber while it is listening or transcribing, because
+              that is the app's "working" signal everywhere else. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ busy: dictation.recording || dictation.working }}
+            accessibilityLabel={
+              dictation.recording ? "Stop dictating" : "Dictate instead of typing"
+            }
+            disabled={dictation.working}
+            onPress={dictation.toggle}
+            className={`h-[46px] w-[46px] items-center justify-center rounded-full border ${
+              dictation.recording ? "border-warning bg-warning-soft" : "border-border bg-surface"
+            }`}
+            style={{ opacity: dictation.working ? 0.55 : 1 }}
+          >
+            <Ionicons
+              name={dictation.recording ? "stop" : "mic-outline"}
+              size={20}
+              color={dictation.recording || dictation.working ? palette.warning : palette.muted}
+            />
+          </Pressable>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={busy ? "Stop generating" : "Send"}

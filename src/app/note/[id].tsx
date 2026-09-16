@@ -3,22 +3,12 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Typography } from "heroui-native";
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import { Pressable, ScrollView, TextInput, View } from "react-native";
-import { AudioManager, AudioRecorder } from "react-native-audio-api";
-import { models, useSpeechToText } from "react-native-executorch";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { IconButton, PageHeader } from "../../components/screen";
 import { ModelGate, deleteNote, getNote, reindexNote, saveNoteText, useAI } from "../../lib/ai";
-import { concatFloat32 } from "../../lib/formats";
-import { useKeyboardHeight, usePalette } from "../../lib/theme";
-
-/**
- * Whisper is trained on 16 kHz mono audio. The recorder treats this as a
- * preference, not a guarantee — if a device insists on another rate the
- * transcript degrades, so this is the first knob to check when accuracy is poor
- * on specific hardware.
- */
-const WHISPER_SAMPLE_RATE = 16_000;
+import { useDictation } from "../../lib/dictation";
+import { useKeyboardOverlap, usePalette } from "../../lib/theme";
 
 /** Long enough that a pause between words doesn't write, short enough to never lose work. */
 const AUTOSAVE_DELAY = 800;
@@ -83,7 +73,7 @@ function Editor({ id }: { id: string }): JSX.Element {
   const { rag, db, invalidate } = useAI();
   const router = useRouter();
   const palette = usePalette();
-  const keyboard = useKeyboardHeight();
+  const { overlap, onLayout } = useKeyboardOverlap();
   const insets = useSafeAreaInsets();
 
   const [title, setTitle] = useState("");
@@ -91,21 +81,19 @@ function Editor({ id }: { id: string }): JSX.Element {
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
 
-  const [voiceOn, setVoiceOn] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const recorderRef = useRef<AudioRecorder | null>(null);
-  const chunksRef = useRef<Float32Array[]>([]);
+  // Shared with the chat composer — see src/lib/dictation.ts.
+  const dictation = useDictation(
+    useCallback((heard: string) => {
+      setBody((prev) => (prev ? `${prev}\n${heard}` : heard));
+      setDirty(true);
+      setSaved(false);
+    }, [])
+  );
 
   // Read by the unmount handler, which must see the final text rather than
   // whatever was current when the effect was created.
   const latest = useRef({ title: "", body: "", dirty: false });
-
-  const stt = useSpeechToText({
-    model: models.speech_to_text.whisper_tiny_en(),
-    preventLoad: !voiceOn,
-  });
 
   useEffect(() => {
     if (!db) return;
@@ -148,65 +136,6 @@ function Editor({ id }: { id: string }): JSX.Element {
     [db, rag, id, invalidate]
   );
 
-  // Stop the mic if the screen goes away mid-recording.
-  useEffect(
-    () => () => {
-      const recorder = recorderRef.current;
-      if (!recorder) return;
-      void recorder.stop();
-      recorder.clearOnAudioReady();
-    },
-    []
-  );
-
-  const startRecording = useCallback(async () => {
-    setNotice(null);
-    if ((await AudioManager.requestRecordingPermissions()) !== "Granted") {
-      setNotice("Microphone access is off. Turn it on in Settings to dictate.");
-      return;
-    }
-
-    const recorder = new AudioRecorder();
-    chunksRef.current = [];
-    recorder.onAudioReady(
-      { sampleRate: WHISPER_SAMPLE_RATE, bufferLength: 4096, channelCount: 1 },
-      (event) => {
-        chunksRef.current.push(Float32Array.from(event.buffer.getChannelData(0)));
-      }
-    );
-
-    const started = await recorder.start();
-    if (started.status === "error") {
-      setNotice(started.message);
-      return;
-    }
-    recorderRef.current = recorder;
-    setRecording(true);
-  }, []);
-
-  const stopRecording = useCallback(async () => {
-    const recorder = recorderRef.current;
-    if (!recorder) return;
-
-    await recorder.stop();
-    recorder.clearOnAudioReady();
-    recorderRef.current = null;
-    setRecording(false);
-
-    const waveform = concatFloat32(chunksRef.current);
-    chunksRef.current = [];
-    if (waveform.length === 0) return;
-
-    try {
-      const { text } = await stt.transcribe(waveform);
-      setBody((prev) => (prev ? `${prev}\n${text}` : text));
-      setDirty(true);
-      setSaved(false);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : String(error));
-    }
-  }, [stt]);
-
   /** Summarise and Quiz read the saved note, so flush before leaving. */
   const goTo = useCallback(
     async (pathname: "/summary/[id]" | "/quiz/[id]") => {
@@ -224,21 +153,17 @@ function Editor({ id }: { id: string }): JSX.Element {
   }, [db, id, invalidate, router]);
 
   const empty = !title.trim() && !body.trim();
-  const micBusy = voiceOn && (!stt.isReady || stt.isGenerating);
-  const micLabel = !voiceOn
-    ? "Dictate"
-    : !stt.isReady
-      ? stt.downloadProgress > 0 && stt.downloadProgress < 1
-        ? `${Math.round(stt.downloadProgress * 100)}%`
-        : "Loading"
-      : stt.isGenerating
-        ? "Transcribing"
-        : recording
-          ? "Stop"
-          : "Dictate";
+  const downloading = dictation.downloadProgress > 0 && dictation.downloadProgress < 1;
+  const micLabel = dictation.working
+    ? "Transcribing"
+    : downloading
+      ? `${Math.round(dictation.downloadProgress * 100)}%`
+      : dictation.recording
+        ? "Stop"
+        : "Dictate";
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" onLayout={onLayout}>
       <PageHeader
         title={saved ? "Saved" : "Note"}
         onBack={() => router.back()}
@@ -286,7 +211,7 @@ function Editor({ id }: { id: string }): JSX.Element {
         />
         <TextInput
           className="min-h-[300px] px-5 pb-6 font-read text-[18px] leading-[28px] text-foreground"
-          placeholder={recording ? "Listening…" : "Start writing."}
+          placeholder={dictation.recording ? "Listening…" : "Start writing."}
           placeholderTextColor={palette.placeholder}
           value={body}
           onChangeText={(next) => {
@@ -298,54 +223,50 @@ function Editor({ id }: { id: string }): JSX.Element {
           textAlignVertical="top"
         />
 
-        {notice && (
+        {dictation.notice && (
           <Typography.Paragraph className="px-5 font-ui text-danger text-[13px]">
-            {notice}
-          </Typography.Paragraph>
-        )}
-        {stt.error && (
-          <Typography.Paragraph className="px-5 font-ui text-danger text-[13px]">
-            {stt.error.message}
+            {dictation.notice}
           </Typography.Paragraph>
         )}
       </ScrollView>
 
       {/* Sits on top of the keyboard when it is open, and clear of Android's
-          own buttons when it is not. */}
+          own buttons when it is not. The margin is only the part of the
+          keyboard the system did not already handle — see useKeyboardOverlap. */}
       <View
         className="flex-row items-center gap-3 border-t border-border bg-surface px-4 pt-2.5"
-        style={{ marginBottom: keyboard, paddingBottom: 10 + (keyboard > 0 ? 0 : insets.bottom) }}
+        style={{ marginBottom: overlap, paddingBottom: 10 + (overlap > 0 ? 0 : insets.bottom) }}
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={recording ? "Stop dictating" : "Dictate"}
-          disabled={micBusy}
-          onPress={() => {
-            if (!voiceOn) {
-              setVoiceOn(true);
-              return;
-            }
-            void (recording ? stopRecording() : startRecording());
-          }}
+          accessibilityLabel={dictation.recording ? "Stop dictating" : "Dictate"}
+          disabled={dictation.working}
+          onPress={dictation.toggle}
           className={`min-h-[44px] flex-row items-center gap-2 rounded-full border px-4 ${
-            recording ? "border-danger bg-danger" : "border-border"
+            dictation.recording ? "border-warning bg-warning-soft" : "border-border"
           }`}
-          style={{ opacity: micBusy ? 0.5 : 1 }}
+          style={{ opacity: dictation.working ? 0.5 : 1 }}
         >
           <Ionicons
-            name={recording ? "stop" : "mic-outline"}
+            name={dictation.recording ? "stop" : "mic-outline"}
             size={17}
-            color={recording ? palette.surface : palette.foreground}
+            color={
+              dictation.recording || dictation.working ? palette.warning : palette.foreground
+            }
           />
-          <Typography.Paragraph
-            className={`font-ui-medium text-[14px] ${recording ? "text-danger-foreground" : ""}`}
-          >
+          <Typography.Paragraph className="font-ui-medium text-[14px]">
             {micLabel}
           </Typography.Paragraph>
         </Pressable>
 
         <Typography.Paragraph className="flex-1 font-ui text-muted text-[12px]">
-          {!voiceOn ? "Speech model downloads once, 80 MB." : recording ? "Recording." : ""}
+          {dictation.working
+            ? "Writing down what you said."
+            : downloading
+              ? "Getting the voice model, once only."
+              : dictation.recording
+                ? "Listening."
+                : "Speech is transcribed on this phone."}
         </Typography.Paragraph>
       </View>
     </View>

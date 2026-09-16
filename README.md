@@ -42,6 +42,17 @@ missed.
 
 **Summarise** — key points, a paragraph, or an outline.
 
+**Scan a label** — photograph a nutrition panel and get it read back in plain words. Text
+recognition runs on the phone like everything else. The reading is editable before it is
+scored, because a recogniser on a crinkled sachet will get a digit wrong, and a wrong number
+is worse than a slow one.
+
+The division of labour here is deliberate: **the model transcribes, the code grades.** Its
+only instruction is to copy numbers off the panel into JSON — it is never asked whether a
+food is healthy. The score is arithmetic against the WHO reference in `src/lib/nutrition.ts`,
+so the same label always produces the same score, and `npm run check` can assert on it. Swap
+that one object and one label to score against a different reference; nothing else changes.
+
 **Search** — semantic, not keyword. "How do I stop a burn hurting" finds a note that only
 says "cool under running water", because the match is on meaning. This runs without the
 language model at all, so it is fast.
@@ -58,11 +69,15 @@ to read.
 | all-MiniLM-L6-v2 | Turns notes into vectors, on the device |
 | [op-sqlite](https://github.com/OP-Engineering/op-sqlite) + libSQL | SQLite with vector search, for retrieval |
 | Whisper tiny.en | Dictation, on the device |
+| CRAFT + CRNN | Finds and reads text in a photographed label, on the device |
 | [react-native-rag](https://github.com/software-mansion/react-native-rag) | Ties retrieval to generation |
 
 A note is stored twice: once as the text you wrote, in a `notes` table, and again as
 overlapping chunks with their embeddings, in `vectors`. The first is what you edit; the
-second is what search and Ask read. Editing a note rewrites both.
+second is what search and Ask read. Editing a note rewrites both. Two smaller tables sit
+beside them — `chats`, which keeps each conversation as one JSON blob because it is only ever
+read and written whole, and `quiz_results`, which is what lets the home screen tell you a
+topic is worth another look without inventing the number.
 
 The model choice matters more than it looks. The default is the smallest one — not because
 of memory, but because the downloader cannot resume, so a stalled connection discards the

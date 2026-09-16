@@ -15,6 +15,7 @@ import {
   REFERENCE_LABEL,
   isEmpty,
   parsePanel,
+  readPanel,
   scorePanel,
   type Age,
   type Panel,
@@ -27,9 +28,9 @@ import { usePalette } from "../../lib/theme";
  */
 const STEPS = [
   {
-    icon: "camera-outline",
-    title: "Photograph the label",
-    note: "Camera, or an image you already have.",
+    icon: "crop-outline",
+    title: "Photograph, then crop to the panel",
+    note: "Crop tight. It is the one thing that most improves the reading.",
   },
   {
     icon: "text-outline",
@@ -49,6 +50,7 @@ type Phase =
   | { kind: "read"; image: string; words: number }
   | { kind: "scoring"; image: string }
   | { kind: "scored"; image: string; panel: Panel }
+  | { kind: "unreadable"; image: string }
   | { kind: "failed"; message: string };
 
 /** The score as a ring. Nothing in RN draws a conic gradient, but SVG has had
@@ -117,7 +119,16 @@ export default function Scan(): JSX.Element {
       return;
     }
 
-    const options: ImagePicker.ImagePickerOptions = { mediaTypes: ["images"], quality: 1 };
+    // Cropping is the single biggest thing that helps accuracy here. The
+    // detector runs at a fixed input size, so a photo of a whole packet spends
+    // most of that budget on packaging; cropped to the panel, it all goes on
+    // the text. allowsEditing puts the system's crop tool in the way of every
+    // scan deliberately.
+    const options: ImagePicker.ImagePickerOptions = {
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      quality: 1,
+    };
     const result =
       from === "camera"
         ? await ImagePicker.launchCameraAsync(options)
@@ -149,7 +160,7 @@ export default function Scan(): JSX.Element {
             ? {
                 kind: "failed",
                 message:
-                  "Nothing readable in that photo. Fill the frame with the panel, hold steady, and avoid glare.",
+                  "Nothing readable in that photo. Crop tight to the nutrition panel, hold the phone square to the label rather than at an angle, and keep glare off it.",
               }
             : { kind: "read", image, words: detections.length }
         );
@@ -163,11 +174,26 @@ export default function Scan(): JSX.Element {
   }, [phase, ocr]);
 
   /**
-   * The model's only job is pulling numbers out of the text. It is never asked
-   * whether the food is healthy — that is arithmetic, in `scorePanel`, so the
-   * same label always gives the same answer.
+   * A nutrition panel is one of the most regular pieces of text there is, so a
+   * parser reads it in under a millisecond with no model loaded at all. This
+   * used to ask the language model for JSON and cost half a minute of staring
+   * at a spinner to retype numbers that were already on screen.
    */
   const score = useCallback(
+    (image: string) => {
+      const panel = readPanel(text);
+      setWords("");
+      setPhase(isEmpty(panel) ? { kind: "unreadable", image } : { kind: "scored", image, panel });
+    },
+    [text]
+  );
+
+  /**
+   * The escape hatch, for a panel worded in a way the parser does not know.
+   * Slow, and opt-in for that reason. Even here the model only transcribes —
+   * it is never asked whether the food is healthy, because that is arithmetic.
+   */
+  const scoreWithModel = useCallback(
     async (image: string) => {
       if (!rag) return;
       setPhase({ kind: "scoring", image });
@@ -391,7 +417,7 @@ export default function Scan(): JSX.Element {
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                onPress={() => void score(phase.image)}
+                onPress={() => score(phase.image)}
                 className="min-h-[48px] flex-1 flex-row items-center justify-center gap-2 rounded-2xl bg-accent active:opacity-80"
               >
                 <Ionicons name="podium-outline" size={17} color={palette.accentForeground} />
@@ -578,6 +604,42 @@ export default function Scan(): JSX.Element {
                   style={{ color: palette.accentForeground }}
                 >
                   Scan another
+                </Typography.Paragraph>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {phase.kind === "unreadable" && (
+          <View className="gap-3 rounded-2xl border border-warning-border bg-warning-soft p-3.5">
+            <View className="flex-row items-start gap-2.5">
+              <Ionicons name="help-circle-outline" size={18} color={palette.warning} />
+              <Typography.Paragraph className="flex-1 font-read text-[13px] leading-5 text-muted-strong">
+                No nutrition values found in that reading. Usually the panel was cut off, or the
+                figures landed on a different line from their names — the text above is editable,
+                so fixing it and scoring again is the quickest route.
+              </Typography.Paragraph>
+            </View>
+            <View className="flex-row gap-2.5">
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setPhase({ kind: "read", image: phase.image, words: 0 })}
+                className="min-h-[44px] flex-1 items-center justify-center rounded-2xl border border-warning-border bg-surface active:opacity-70"
+              >
+                <Typography.Paragraph className="font-ui-bold text-[12.5px]">
+                  Edit the text
+                </Typography.Paragraph>
+              </Pressable>
+              {/* Opt-in, because it is slow: the model reads the whole panel
+                  token by token where the parser did it instantly. */}
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => void scoreWithModel(phase.image)}
+                className="min-h-[44px] flex-1 flex-row items-center justify-center gap-1.5 rounded-2xl border border-warning-border bg-surface active:opacity-70"
+              >
+                <Ionicons name="sparkles-outline" size={15} color={palette.warning} />
+                <Typography.Paragraph className="font-ui-bold text-[12.5px]">
+                  Let the AI try
                 </Typography.Paragraph>
               </Pressable>
             </View>

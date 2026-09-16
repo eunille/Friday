@@ -139,6 +139,121 @@ export function parsePanel(text: string): Panel {
   return panel;
 }
 
+/* ------------------------------------------------------- reading it here
+
+   A nutrition panel is one of the most regular pieces of text in the world:
+   a name, a number, a unit, repeated. That is a parser's job, not a language
+   model's — a 1.5B model spends half a minute retyping numbers that are
+   already in the OCR output, and can get one wrong on the way. This runs in
+   under a millisecond, needs no model loaded at all, and is asserted on.
+
+   `parsePanel` above stays as the escape hatch for a label this cannot read.
+   ---------------------------------------------------------------------- */
+
+type Rule = {
+  key: NutrientKey;
+  unit: "mg" | "g" | "kcal";
+  /** Tried in order, so the specific wording ("added sugars") is preferred
+      over the loose one ("sugars"). */
+  patterns: readonly RegExp[];
+};
+
+const RULES: readonly Rule[] = [
+  { key: "energyKcal", unit: "kcal", patterns: [/energy/i, /calories/i, /\bkcal\b/i] },
+  // No "Na" abbreviation. On a Filipino label "na" is an ordinary particle
+  // ("walang asukal na idinagdag"), so it would match a line of ingredients
+  // and take whatever number came next. Sodium and salt cover real panels.
+  { key: "sodiumMg", unit: "mg", patterns: [/sodium/i] },
+  {
+    key: "addedSugarG",
+    unit: "g",
+    patterns: [/added\s*sugar/i, /total\s*sugar/i, /\bsugars?\b/i],
+  },
+  { key: "satFatG", unit: "g", patterns: [/saturated/i, /\bsat\.?\s*fat/i] },
+  { key: "proteinG", unit: "g", patterns: [/protein/i] },
+  { key: "fibreG", unit: "g", patterns: [/dietary\s*fib(?:re|er)/i, /\bfib(?:re|er)\b/i] },
+];
+
+/** The first number after `from`, with whatever unit sits against it. */
+function valueAfter(line: string, from: number): { amount: number; unit: string } | null {
+  const rest = line.slice(from);
+  const found = /(\d[\d,]*(?:[.]\d+)?)\s*(mg|g|kcal|kj)?/i.exec(rest);
+  if (!found) return null;
+  const amount = Number(found[1].replace(/,/g, ""));
+  if (!Number.isFinite(amount)) return null;
+  return { amount, unit: (found[2] ?? "").toLowerCase() };
+}
+
+function convert(amount: number, found: string, want: Rule["unit"]): number {
+  if (want === "mg" && found === "g") return amount * 1000;
+  if (want === "g" && found === "mg") return amount / 1000;
+  // Labels outside the US often print kilojoules; 1 kcal is 4.184 kJ.
+  if (want === "kcal" && found === "kj") return amount / 4.184;
+  return amount;
+}
+
+/**
+ * Reads a panel straight out of recognised text. No model involved.
+ *
+ * ponytail: line-by-line keyword match, no table or column detection. A label
+ * printing per-100g and per-serving side by side takes whichever number comes
+ * first on the line. The text is editable on screen, which is a faster
+ * correction loop than anything cleverer would buy.
+ */
+export function readPanel(text: string): Panel {
+  const lines = text.split("\n");
+  const panel: Panel = {};
+
+  for (const rule of RULES) {
+    for (const pattern of rule.patterns) {
+      let matched = false;
+      for (const line of lines) {
+        const hit = pattern.exec(line);
+        if (!hit) continue;
+        const value = valueAfter(line, hit.index + hit[0].length);
+        if (!value) continue;
+        const amount = convert(value.amount, value.unit, rule.unit);
+        if (amount > 0) {
+          panel[rule.key] = Math.round(amount * 10) / 10;
+          matched = true;
+          break;
+        }
+      }
+      if (matched) break;
+    }
+  }
+
+  // Salt is sometimes printed instead of sodium. 1 g of salt is about 400 mg.
+  if (panel.sodiumMg === undefined) {
+    for (const line of lines) {
+      const hit = /\bsalt\b/i.exec(line);
+      if (!hit) continue;
+      const value = valueAfter(line, hit.index + hit[0].length);
+      if (value && value.amount > 0) {
+        panel.sodiumMg = Math.round(convert(value.amount, value.unit || "g", "g") * 400);
+        break;
+      }
+    }
+  }
+
+  const serving = lines.find((line) => /serving\s*size|per\s*serving/i.test(line));
+  if (serving) panel.serving = serving.trim();
+
+  // The product name, if the first line looks like one rather than a figure or
+  // the panel's own heading.
+  const first = lines.find((line) => line.trim() !== "");
+  if (
+    first &&
+    !/\d/.test(first) &&
+    first.trim().length > 2 &&
+    !/nutrition|facts|information|panel|label/i.test(first)
+  ) {
+    panel.name = first.trim();
+  }
+
+  return panel;
+}
+
 /* ------------------------------------------------------------------ score */
 
 export type Band = "low" | "moderate" | "high" | "good";

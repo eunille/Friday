@@ -259,53 +259,70 @@ export function preview(body: string): string {
 }
 
 /** The shape `useOCR` hands back, narrowed to what reading order needs. */
-export type OcrBox = { bbox: { x1: number; y1: number; x2: number; y2: number }; text: string };
+export type OcrBox = {
+  bbox: { x1: number; y1: number; x2: number; y2: number };
+  text: string;
+  /** Recogniser confidence, 0 to 1. Absent in hand-written test fixtures. */
+  score?: number;
+};
 
 /**
  * Turns unordered OCR boxes into the text a person would read.
  *
  * The recogniser returns each detected word with a box and no sense of
- * sequence, so a nutrition panel comes back shuffled. Boxes are grouped into
- * lines by how far their vertical centres sit apart — measured against the
- * median box height, so it works the same on a close-up and on a photo taken
- * from across a table — then each line is sorted left to right.
+ * sequence, so a panel comes back shuffled. Boxes are grouped into lines, then
+ * each line is sorted left to right.
  *
- * ponytail: greedy single pass, no column detection. A two-column panel will
- * read across rather than down. Upgrade to clustering on x if that turns out
- * to matter on real labels.
+ * Lines are decided by how much two boxes *overlap* vertically, not by how far
+ * apart their centres are. On a nutrition panel "Sodium" is often set larger
+ * than the "1,480 mg" beside it: same line, different centres, different
+ * heights. Centre distance splits that pair onto separate lines and the label
+ * comes out scrambled; overlap keeps them together. Measuring the shared band
+ * against the shorter box also stops a tall heading swallowing the row beneath
+ * it.
+ *
+ * Detections below `minScore` are dropped. The recogniser emits confident
+ * nonsense for smudges and package artwork, and one invented word in the
+ * middle of a line is worse than a gap.
+ *
+ * ponytail: greedy single pass, no column detection. A panel printing per-100g
+ * and per-serving side by side reads across rather than down. The text is
+ * editable on screen, which is a faster fix than anything cleverer.
  */
-export function readingOrder(boxes: readonly OcrBox[], tolerance = 0.6): string {
+export function readingOrder(boxes: readonly OcrBox[], minScore = 0.3): string {
   const rows = boxes
-    .filter((box) => box.text.trim() !== "")
+    .filter((box) => box.text.trim() !== "" && (box.score ?? 1) >= minScore)
     .map((box) => ({
       text: box.text.trim(),
-      mid: (box.bbox.y1 + box.bbox.y2) / 2,
-      height: Math.abs(box.bbox.y2 - box.bbox.y1),
+      top: Math.min(box.bbox.y1, box.bbox.y2),
+      bottom: Math.max(box.bbox.y1, box.bbox.y2),
       left: Math.min(box.bbox.x1, box.bbox.x2),
     }))
-    .sort((a, b) => a.mid - b.mid);
+    .sort((a, b) => a.top - b.top || a.left - b.left);
 
   if (rows.length === 0) return "";
 
-  const heights = rows.map((row) => row.height).sort((a, b) => a - b);
-  // Median, not mean: one stray tall box should not stretch every threshold.
-  const gap = (heights[Math.floor(heights.length / 2)] || 1) * tolerance;
+  type Line = { top: number; bottom: number; items: typeof rows };
+  const lines: Line[] = [];
 
-  const lines: (typeof rows)[] = [];
   for (const row of rows) {
-    const current = lines[lines.length - 1];
-    // Compared against the line's running centre rather than its first box, so
-    // a slightly rotated label does not split halfway along.
-    const centre = current
-      ? current.reduce((sum, item) => sum + item.mid, 0) / current.length
-      : 0;
-    if (current && Math.abs(row.mid - centre) <= gap) current.push(row);
-    else lines.push([row]);
+    const line = lines[lines.length - 1];
+    const height = row.bottom - row.top;
+    const shared = line ? Math.min(line.bottom, row.bottom) - Math.max(line.top, row.top) : 0;
+
+    // Half of this box has to sit inside the line's band to join it.
+    if (line && height > 0 && shared / height >= 0.5) {
+      line.items.push(row);
+      line.top = Math.min(line.top, row.top);
+      line.bottom = Math.max(line.bottom, row.bottom);
+    } else {
+      lines.push({ top: row.top, bottom: row.bottom, items: [row] });
+    }
   }
 
   return lines
     .map((line) =>
-      line
+      line.items
         .sort((a, b) => a.left - b.left)
         .map((row) => row.text)
         .join(" ")

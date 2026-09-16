@@ -174,4 +174,33 @@ assert.equal(
   "Total Fat 9g"
 );
 
+// The scrambling case. A nutrient name set larger than its value shares the
+// line but not the centre: grouping on centre distance tore these apart.
+const sized = (text: string, x1: number, y1: number, height: number) => ({
+  text,
+  bbox: { x1, y1, x2: x1 + 40, y2: y1 + height },
+});
+assert.equal(
+  readingOrder([sized("Sodium", 10, 50, 20), sized("1,480 mg", 120, 56, 9)]),
+  "Sodium 1,480 mg"
+);
+// …but a genuinely lower row still starts a new line, even under a tall heading.
+assert.equal(
+  readingOrder([sized("NUTRITION", 10, 20, 26), sized("Sodium", 10, 60, 10)]),
+  "NUTRITION\nSodium"
+);
+
+// Confident nonsense from smudges and artwork is dropped, not woven in.
+const scored = (text: string, x1: number, y1: number, score: number) => ({
+  text,
+  bbox: { x1, y1, x2: x1 + 40, y2: y1 + 10 },
+  score,
+});
+assert.equal(
+  readingOrder([scored("Sodium", 10, 50, 0.95), scored("s~m", 60, 50, 0.05)]),
+  "Sodium"
+);
+// A box with no score at all is trusted, so fixtures and older callers work.
+assert.equal(readingOrder([box("Sodium", 10, 50)]), "Sodium");
+
 console.log("formats: all checks passed");

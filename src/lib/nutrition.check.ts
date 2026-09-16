@@ -7,7 +7,7 @@
  */
 import assert from "node:assert/strict";
 
-import { dailyLimits, isEmpty, parsePanel, scorePanel } from "./nutrition.ts";
+import { dailyLimits, isEmpty, parsePanel, readPanel, scorePanel } from "./nutrition.ts";
 
 /* ------------------------------------------------------------- reference */
 
@@ -109,5 +109,56 @@ assert.equal(tones.rows.find((row) => row.key === "fibreG")?.word, "Low");
 
 // An empty panel scores nothing rather than a suspicious 100.
 assert.equal(scorePanel({}, "adult").rows.length, 0);
+
+/* ------------------------------------------------- reading without a model */
+
+// A whole panel, as OCR would hand it over after readingOrder().
+const read = readPanel(
+  [
+    "Nutrition Facts",
+    "Serving Size 1 pack (55 g)",
+    "Energy 380 kcal",
+    "Total Fat 14 g",
+    "Saturated Fat 7 g",
+    "Sodium 1,480 mg 62%",
+    "Total Carbohydrate 52 g",
+    "Dietary Fiber 2 g",
+    "Total Sugars 6 g",
+    "Protein 9 g",
+  ].join("\n")
+);
+assert.equal(read.sodiumMg, 1480, "a comma and a trailing % must not confuse it");
+assert.equal(read.satFatG, 7, "Saturated Fat, not Total Fat");
+assert.equal(read.fibreG, 2);
+assert.equal(read.addedSugarG, 6);
+assert.equal(read.proteinG, 9);
+assert.equal(read.energyKcal, 380);
+assert.ok(read.serving?.includes("55 g"));
+// The panel's own heading is not the product's name.
+assert.equal(read.name, undefined);
+
+// "Added sugars" is the honest figure and must win over "total sugars".
+assert.equal(readPanel("Total Sugars 20 g\nAdded Sugars 3 g").addedSugarG, 3);
+
+// Units that are not what we score in.
+assert.equal(readPanel("Sodium 1.5 g").sodiumMg, 1500);
+assert.equal(Math.round(readPanel("Energy 1590 kJ").energyKcal ?? 0), 380);
+// Salt instead of sodium: 1 g of salt is about 400 mg of sodium.
+assert.equal(readPanel("Salt 1.2 g").sodiumMg, 480);
+
+// On a Filipino label "na" is an ordinary particle. It must never be read as
+// the sodium abbreviation, or an ingredients line would set the figure.
+assert.equal(readPanel("Walang asukal na idinagdag 0 g").sodiumMg, undefined);
+// Nor should a fruit.
+assert.equal(readPanel("Banana puree 25 g").sodiumMg, undefined);
+
+// Nothing readable yields nothing, rather than a zero that would score well.
+assert.ok(isEmpty(readPanel("")));
+assert.ok(isEmpty(readPanel("blurry photo of a shelf")));
+// A label naming a nutrient without a figure must not invent one.
+assert.ok(isEmpty(readPanel("Sodium\nProtein")));
+
+// The product name, when the first line really is one.
+assert.equal(readPanel("Choco Malt Drink\nSodium 95 mg").name, "Choco Malt Drink");
 
 console.log("nutrition: all checks passed");
