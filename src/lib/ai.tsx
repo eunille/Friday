@@ -187,6 +187,8 @@ type AIContextValue = {
   setSettings: (settings: AISettings) => void;
   appearance: Appearance;
   setAppearance: (appearance: Appearance) => void;
+  alerts: boolean;
+  setAlerts: (alerts: boolean) => void;
   /** Bumped after every write so list screens know to re-query. */
   revision: number;
   invalidate: () => void;
@@ -230,6 +232,9 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
   // ExpoResourceFetcher.listDownloadedFiles() answers exactly — at the cost of
   // matching its local paths back to each tier's source URLs by basename.
   const [fetched, setFetched] = useState<ReadonlySet<string>>(() => new Set());
+  // Off until asked for. Notification permission is requested when this is
+  // turned on, never at startup.
+  const [alerts, setAlertsState] = useState(false);
   // Tagged with the tier it was built for: on a tier switch the old instance is
   // ignored immediately rather than being handed out until the new one loads.
   const [loaded, setLoaded] = useState<{ tier: Tier; rag: RAG } | null>(null);
@@ -308,6 +313,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
         const savedTier = byKey.get("tier");
         setStore(vectorStore);
         setSettingsState(readSettings(byKey.get("ai")));
+        setAlertsState(byKey.get("alerts") === "1");
         const savedAppearance = byKey.get("appearance");
         if (typeof savedAppearance === "string" && savedAppearance in APPEARANCES) {
           setAppearanceState(savedAppearance as Appearance);
@@ -382,6 +388,17 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
       void store?.db.execute(
         "INSERT INTO settings (key, value) VALUES ('ai', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         [JSON.stringify(next)]
+      );
+    },
+    [store]
+  );
+
+  const setAlerts = useCallback(
+    (next: boolean) => {
+      setAlertsState(next);
+      void store?.db.execute(
+        "INSERT INTO settings (key, value) VALUES ('alerts', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [next ? "1" : "0"]
       );
     },
     [store]
@@ -471,6 +488,8 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
       setSettings,
       appearance,
       setAppearance,
+      alerts,
+      setAlerts,
       revision,
       invalidate,
       retry,
@@ -487,6 +506,8 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
     setSettings,
     appearance,
     setAppearance,
+    alerts,
+    setAlerts,
     revision,
     invalidate,
     retry,

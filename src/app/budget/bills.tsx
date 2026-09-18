@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import { useConfirm } from "../../components/dialog";
+import { syncAlerts } from "../../lib/alerts";
 import { IconButton, PageHeader, SectionTitle } from "../../components/screen";
 import { ModelGate, newNoteId, useAI } from "../../lib/ai";
 import {
@@ -245,7 +246,7 @@ function Editor({
 }
 
 function Bills(): JSX.Element {
-  const { db } = useAI();
+  const { db, alerts } = useAI();
   const router = useRouter();
   const palette = usePalette();
   const confirm = useConfirm();
@@ -260,8 +261,13 @@ function Bills(): JSX.Element {
     if (!db) return;
     void listAccounts(db).then(setAccounts);
     void listTxns(db).then(setTxns);
-    void listRecurring(db).then(setRules);
-  }, [db]);
+    void listRecurring(db).then((next) => {
+      setRules(next);
+      // Rescheduled from whatever the rules are now, so a reminder can never
+      // outlive the bill it was for. No-op when reminders are switched off.
+      if (alerts) void syncAlerts(next);
+    });
+  }, [db, alerts]);
 
   useEffect(refresh, [refresh]);
 

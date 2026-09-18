@@ -19,6 +19,7 @@ const NATIVE_ONLY = new Set([
   "@react-native-rag/executorch",
   "@react-native-rag/op-sqlite",
   "react-native-audio-api",
+  "expo-notifications",
 ]);
 
 const STUB = path.resolve(__dirname, "src/web/native-stubs.ts");

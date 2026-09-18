@@ -273,4 +273,34 @@ export function useSpeechToText(): {
   return { transcribe: () => Promise.resolve(""), isReady: false, downloadProgress: 0 };
 }
 
+/* -------------------------------------------------- expo-notifications --- */
+
+/**
+ * A browser tab has no tray worth scheduling into, and the preview exists for
+ * looking at screens rather than waiting a day for a reminder. These resolve as
+ * if permission were refused, so the Settings switch shows its blocked state
+ * instead of claiming to have scheduled something it did not.
+ */
+export function setNotificationHandler(): void {
+  /* nothing to handle in a browser */
+}
+
+export function getPermissionsAsync(): Promise<{ granted: boolean; canAskAgain: boolean }> {
+  return Promise.resolve({ granted: false, canAskAgain: false });
+}
+
+export function requestPermissionsAsync(): Promise<{ granted: boolean; canAskAgain: boolean }> {
+  return Promise.resolve({ granted: false, canAskAgain: false });
+}
+
+export function cancelAllScheduledNotificationsAsync(): Promise<void> {
+  return Promise.resolve();
+}
+
+export function scheduleNotificationAsync(): Promise<string> {
+  return Promise.resolve("");
+}
+
+export const SchedulableTriggerInputTypes = { DATE: "date" } as const;
+
 export default { open, models, initExecutorch };
