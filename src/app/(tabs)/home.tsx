@@ -4,9 +4,13 @@ import { Typography } from "heroui-native";
 import { useEffect, useState, type ComponentProps, type JSX } from "react";
 import { Pressable, View } from "react-native";
 
+import { useConfirm } from "../../components/dialog";
 import { Group, Mascot, PressCard, Screen } from "../../components/screen";
 import {
   TIERS,
+  deleteChat,
+  deleteNote,
+  deleteQuizResult,
   listChats,
   listNotes,
   listQuizResults,
@@ -31,13 +35,16 @@ type Recent = {
   title: string;
   meta: string;
   go: () => void;
+  /** What the confirm calls it. Three tables, three words for the same gesture. */
+  noun: string;
+  remove: () => void;
 };
 
 function greeting(): string {
   const hour = new Date().getHours();
-  if (hour < 12) return "Magandang umaga";
-  if (hour < 18) return "Magandang hapon";
-  return "Magandang gabi";
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
 }
 
 /** One of the four "Jump in" tiles. */
@@ -77,8 +84,9 @@ function Tile({
 }
 
 export default function Home(): JSX.Element {
-  const { db, tier, status, revision } = useAI();
+  const { db, tier, status, revision, invalidate } = useAI();
   const router = useRouter();
+  const confirm = useConfirm();
   const palette = usePalette();
   const [notes, setNotes] = useState<Note[]>([]);
   const [chats, setChats] = useState<ChatSummary[]>([]);
@@ -108,6 +116,8 @@ export default function Home(): JSX.Element {
       title: note.title || "Untitled",
       meta: `${relativeDate(note.updatedAt)} · ${preview(note.body)}`,
       go: () => router.push({ pathname: "/note/[id]", params: { id: note.id } }),
+      noun: "note",
+      remove: () => void (db && deleteNote(db, note.id).then(invalidate)),
     })),
     ...chats.map((chat) => ({
       key: `chat-${chat.id}`,
@@ -118,6 +128,8 @@ export default function Home(): JSX.Element {
       title: chat.title,
       meta: `${relativeDate(chat.updatedAt)} · ${chat.turns} messages`,
       go: () => router.push({ pathname: "/", params: { chat: chat.id } }),
+      noun: "conversation",
+      remove: () => void (db && deleteChat(db, chat.id).then(invalidate)),
     })),
     ...quizzes.map((quiz) => ({
       key: `quiz-${quiz.id}`,
@@ -128,6 +140,9 @@ export default function Home(): JSX.Element {
       title: quiz.title,
       meta: `Scored ${quiz.score}/${quiz.total} · ${relativeDate(quiz.takenAt)}`,
       go: () => router.push({ pathname: "/quiz/[id]", params: { id: quiz.noteId } }),
+      noun: "result",
+      // Deletes the attempt, never the note it was taken from.
+      remove: () => void (db && deleteQuizResult(db, quiz.id).then(invalidate)),
     })),
   ]
     .sort((a, b) => b.when.localeCompare(a.when))
@@ -286,6 +301,15 @@ export default function Home(): JSX.Element {
                   accessibilityRole="button"
                   accessibilityLabel={`Open ${item.title}`}
                   onPress={item.go}
+                  onLongPress={() =>
+                    confirm.ask({
+                      title: `Delete this ${item.noun}?`,
+                      message: `“${item.title}” can't be brought back.`,
+                      action: "Delete",
+                      destructive: true,
+                      onConfirm: item.remove,
+                    })
+                  }
                   className={`min-h-[60px] flex-row items-center gap-3 px-3.5 py-3 active:bg-surface-tertiary ${
                     index > 0 ? "border-t border-border" : ""
                   }`}
@@ -353,6 +377,7 @@ export default function Home(): JSX.Element {
           </View>
         )}
       </Screen>
+      {confirm.dialog}
     </View>
   );
 }

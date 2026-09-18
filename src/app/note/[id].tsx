@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import { Pressable, ScrollView, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useConfirm } from "../../components/dialog";
 import { IconButton, PageHeader } from "../../components/screen";
 import { ModelGate, deleteNote, getNote, reindexNote, saveNoteText, useAI } from "../../lib/ai";
 import { useDictation } from "../../lib/dictation";
@@ -72,6 +73,7 @@ function MoreMenu({ items, onClose }: { items: MenuItem[]; onClose: () => void }
 function Editor({ id }: { id: string }): JSX.Element {
   const { rag, db, invalidate } = useAI();
   const router = useRouter();
+  const confirm = useConfirm();
   const palette = usePalette();
   const { overlap, onLayout } = useKeyboardOverlap();
   const insets = useSafeAreaInsets();
@@ -145,12 +147,26 @@ function Editor({ id }: { id: string }): JSX.Element {
     [db, id, title, body, router]
   );
 
-  const remove = useCallback(async () => {
-    if (db) await deleteNote(db, id);
-    latest.current = { title: "", body: "", dirty: false };
-    invalidate();
-    router.back();
-  }, [db, id, invalidate, router]);
+  const remove = useCallback(() => {
+    confirm.ask({
+      title: "Delete this note?",
+      message: title.trim()
+        ? `“${title.trim()}” and anything the assistant learnt from it will be gone.`
+        : "This note and anything the assistant learnt from it will be gone.",
+      action: "Delete",
+      destructive: true,
+      onConfirm: () => {
+        void (async () => {
+          if (db) await deleteNote(db, id);
+          // Cleared before leaving, or the autosave on unmount writes the note
+          // straight back into the table it was just deleted from.
+          latest.current = { title: "", body: "", dirty: false };
+          invalidate();
+          router.back();
+        })();
+      },
+    });
+  }, [db, id, title, confirm, invalidate, router]);
 
   const empty = !title.trim() && !body.trim();
   const downloading = dictation.downloadProgress > 0 && dictation.downloadProgress < 1;
@@ -269,6 +285,7 @@ function Editor({ id }: { id: string }): JSX.Element {
                 : "Speech is transcribed on this phone."}
         </Typography.Paragraph>
       </View>
+      {confirm.dialog}
     </View>
   );
 }

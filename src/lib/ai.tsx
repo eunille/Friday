@@ -17,7 +17,9 @@ import { initExecutorch, models } from "react-native-executorch";
 import { ExpoResourceFetcher } from "react-native-executorch-expo-resource-fetcher";
 import { RAG, uuidv4 } from "react-native-rag";
 
+import { MascotAtWork, useCookingWord } from "../components/cooking";
 import { joinChunks } from "./formats";
+import { createLedgerTables } from "./ledger";
 
 // ExecuTorch 0.9+ ships no downloader of its own — an adapter must be
 // registered before anything tries to load a model. Module scope, so this runs
@@ -25,6 +27,11 @@ import { joinChunks } from "./formats";
 initExecutorch({ resourceFetcher: ExpoResourceFetcher });
 
 const DB_NAME = "offline-ai";
+
+/** Namespace for the "this model's files are on disk" flags in `settings`. */
+const FETCHED = "fetched:";
+const REMEMBER_FETCHED =
+  "INSERT INTO settings (key, value) VALUES (?, '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value";
 
 export const TIERS = {
   tiny: {
@@ -80,7 +87,11 @@ export type Note = {
 };
 
 export type AIStatus =
-  | { kind: "loading"; stage: string; progress: number }
+  // `fetching` separates the two waits that look identical from outside: a
+  // one-off download over the network, and reading files already on disk into
+  // memory. Progress cannot tell them apart, because a warm start never reports
+  // any, so 0% means both "not started yet" and "nothing to download".
+  | { kind: "loading"; stage: string; progress: number; fetching: boolean }
   | { kind: "ready" }
   | { kind: "error"; message: string };
 
@@ -209,6 +220,16 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
   const [download, setDownload] = useState<{ of: Tier | "embeddings"; progress: number } | null>(
     null
   );
+  // Which models have finished downloading at least once, so a later start can
+  // say it is loading rather than offering to cancel a download that is not
+  // happening. Persisted, because it has to survive the process that learnt it.
+  //
+  // ponytail: a remembered flag, not a look at the disk. It is only written
+  // after a load succeeds, so an install that predates this code spends one
+  // more start showing the download screen before it learns. If that matters,
+  // ExpoResourceFetcher.listDownloadedFiles() answers exactly — at the cost of
+  // matching its local paths back to each tier's source URLs by basename.
+  const [fetched, setFetched] = useState<ReadonlySet<string>>(() => new Set());
   // Tagged with the tier it was built for: on a tier switch the old instance is
   // ignored immediately rather than being handed out until the new one loads.
   const [loaded, setLoaded] = useState<{ tier: Tier; rag: RAG } | null>(null);
@@ -265,12 +286,24 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
              takenAt TEXT NOT NULL
            )`
         );
+        await createLedgerTables(db);
         await backfillNotes(db);
         if (cancelled) return;
 
         const saved = await db.execute("SELECT key, value FROM settings");
         const byKey = new Map(saved.rows.map((row: any) => [row.key as string, row.value]));
         if (cancelled) return;
+
+        // Getting past vectorStore.load() is itself proof the embedding model is
+        // on disk, so record it now rather than leaving the next start to guess.
+        const already = new Set(
+          [...byKey.keys()]
+            .filter((key) => key.startsWith(FETCHED))
+            .map((key) => key.slice(FETCHED.length))
+        );
+        already.add("embeddings");
+        setFetched(already);
+        void db.execute(REMEMBER_FETCHED, [`${FETCHED}embeddings`]);
 
         const savedTier = byKey.get("tier");
         setStore(vectorStore);
@@ -317,6 +350,10 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
         // idempotent work — construct and go.
         setLoaded({ tier, rag: new RAG({ vectorStore: store, llm }) });
         setError(null);
+        // Loading returned, so the weights are on disk whether they arrived just
+        // now or months ago. Next start can say so instead of offering Cancel.
+        setFetched((prev) => (prev.has(tier) ? prev : new Set(prev).add(tier)));
+        void store.db.execute(REMEMBER_FETCHED, [`${FETCHED}${tier}`]);
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(errorMessage(err));
@@ -393,6 +430,12 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
   const value = useMemo<AIContextValue>(() => {
     // Derived, not stored: React owns the truth, so there is nothing to keep in
     // sync and no setState in an effect body.
+    // A live progress report proves a download; otherwise trust the flag. The
+    // fallback when neither applies is "fetching", because a first run has to
+    // be told it needs the network before it is asked to wait for one.
+    const isFetching = (what: Tier | "embeddings"): boolean =>
+      download?.of === what || !fetched.has(what);
+
     const status: AIStatus = error
       ? { kind: "error", message: error }
       : rag
@@ -400,13 +443,21 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
         : !store
           ? {
               kind: "loading",
-              stage: "Downloading embedding model",
+              stage: isFetching("embeddings") ? "Downloading embedding model" : "Opening your notes",
               progress: download?.of === "embeddings" ? download.progress : 0,
+              fetching: isFetching("embeddings"),
             }
           : {
               kind: "loading",
-              stage: tier ? `Preparing ${TIERS[tier].name}` : "Starting up",
+              // "Preparing X" is a promise about a download. On a warm start the
+              // name alone is the honest label, and the screen supplies the verb.
+              stage: !tier
+                ? "Starting up"
+                : isFetching(tier)
+                  ? `Preparing ${TIERS[tier].name}`
+                  : TIERS[tier].name,
               progress: download?.of === tier ? download.progress : 0,
+              fetching: tier ? isFetching(tier) : false,
             };
 
     return {
@@ -440,6 +491,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
     invalidate,
     retry,
     cancelDownload,
+    fetched,
   ]);
 
   return <AIContext.Provider value={value}>{children}</AIContext.Provider>;
@@ -486,6 +538,33 @@ async function backfillNotes(db: DB): Promise<void> {
 }
 
 /**
+ * The warm start: files on disk, nothing to download, nothing to cancel.
+ *
+ * No progress bar, because there is no progress to report — a bar that jumps to
+ * 1% and then sits there reads as a hang, which is exactly the impression this
+ * screen exists to avoid. The mascot and the changing word carry it instead.
+ */
+function Warming({ stage }: { stage: string }): JSX.Element {
+  const word = useCookingWord();
+
+  return (
+    <View className="items-center gap-5">
+      <MascotAtWork />
+      <Typography.Heading
+        type="h2"
+        accessibilityLiveRegion="polite"
+        className="font-ui-bold text-[26px] tracking-tight"
+      >
+        {word}…
+      </Typography.Heading>
+      <Typography.Paragraph className="text-center font-read text-muted text-[15px] leading-6">
+        Loading {stage} from this phone. No network needed.
+      </Typography.Paragraph>
+    </View>
+  );
+}
+
+/**
  * Renders `children` only once the models are loaded. Every screen needs this,
  * so it lives next to the provider rather than being repeated four times.
  */
@@ -497,36 +576,44 @@ export function ModelGate({ children }: { children: ReactNode }): JSX.Element {
   return (
     <View className="flex-1 bg-background justify-center px-7">
       {status.kind === "loading" ? (
-        <View className="gap-5">
-          <View className="flex-row items-end justify-between">
-            <Typography.Heading type="h2" className="font-ui-bold text-[26px] tracking-tight">
-              {status.stage}
-            </Typography.Heading>
-            {status.progress > 0 ? (
-              <Typography.Paragraph className="font-ui-bold text-accent text-[26px]">
-                {Math.round(status.progress * 100)}%
-              </Typography.Paragraph>
-            ) : (
-              <Spinner size="sm" />
-            )}
+        status.fetching ? (
+          <View className="gap-5">
+            <MascotAtWork />
+            <View className="flex-row items-end justify-between">
+              <Typography.Heading type="h2" className="font-ui-bold text-[26px] tracking-tight">
+                {status.stage}
+              </Typography.Heading>
+              {status.progress > 0 ? (
+                <Typography.Paragraph className="font-ui-bold text-accent text-[26px]">
+                  {Math.round(status.progress * 100)}%
+                </Typography.Paragraph>
+              ) : (
+                <Spinner size="sm" />
+              )}
+            </View>
+
+            <View className="h-[3px] w-full overflow-hidden rounded-full bg-surface-tertiary">
+              <View
+                className="h-full rounded-full bg-accent"
+                style={{ width: `${Math.max(status.progress, 0.01) * 100}%` }}
+              />
+            </View>
+
+            <Typography.Paragraph className="font-read text-muted text-[15px] leading-6">
+              This is the only time the app needs a network. Keep it open until the bar fills, then
+              it runs with the radio off.
+            </Typography.Paragraph>
+
+            <Button variant="tertiary" onPress={cancelDownload}>
+              Cancel download
+            </Button>
           </View>
-
-          <View className="h-[3px] w-full overflow-hidden rounded-full bg-surface-tertiary">
-            <View
-              className="h-full rounded-full bg-accent"
-              style={{ width: `${Math.max(status.progress, 0.01) * 100}%` }}
-            />
-          </View>
-
-          <Typography.Paragraph className="font-read text-muted text-[15px] leading-6">
-            This is the only time the app needs a network. Keep it open until the bar fills, then it
-            runs with the radio off.
-          </Typography.Paragraph>
-
-          <Button variant="tertiary" onPress={cancelDownload}>
-            Cancel download
-          </Button>
-        </View>
+        ) : (
+          // Nothing to download and nothing to cancel: the files are here, this
+          // is the phone reading them in. No bar either — there is no progress
+          // to report, and a bar that crawls to 1% and stops reads as a hang.
+          <Warming stage={status.stage} />
+        )
       ) : (
         <View className="gap-4">
           <Typography.Heading type="h2" className="font-ui-bold text-[26px] tracking-tight">
@@ -741,6 +828,29 @@ export async function getChat(db: DB, id: string): Promise<unknown[] | null> {
 
 export async function deleteChat(db: DB, id: string): Promise<void> {
   await db.execute("DELETE FROM chats WHERE id = ?", [id]);
+}
+
+/** Titles are generated from the first question, which is often not what it was about. */
+export async function renameChat(db: DB, id: string, title: string): Promise<void> {
+  await db.execute("UPDATE chats SET title = ? WHERE id = ?", [title, id]);
+}
+
+export async function deleteQuizResult(db: DB, id: string): Promise<void> {
+  await db.execute("DELETE FROM quiz_results WHERE id = ?", [id]);
+}
+
+/**
+ * Everything the user put in, gone in one step.
+ *
+ * Deliberately not the models or the settings: the claim this app makes is that
+ * your material never leaves the phone, so what has to be provable is that the
+ * material can leave the phone's storage. Re-downloading a gigabyte to prove it
+ * is not part of that, and neither is losing your theme.
+ */
+export async function eraseContent(db: DB): Promise<void> {
+  for (const table of ["vectors", "notes", "chats", "quiz_results"]) {
+    await db.execute(`DELETE FROM ${table}`);
+  }
 }
 
 export async function saveQuizResult(

@@ -4,6 +4,7 @@ import { Button, Spinner, Typography } from "heroui-native";
 import { useCallback, useEffect, useState, type JSX, type ReactNode } from "react";
 import { Pressable, TextInput, View } from "react-native";
 
+import { useConfirm } from "../../components/dialog";
 import {
   ChoiceRow,
   Group,
@@ -38,6 +39,7 @@ function Section({ title, children }: { title: string; children: ReactNode }): J
 function Library(): JSX.Element {
   const { rag, db, tier, setTier, settings, revision, invalidate } = useAI();
   const router = useRouter();
+  const confirm = useConfirm();
   const palette = usePalette();
 
   const [packs, setPacks] = useState<Source[]>([]);
@@ -83,12 +85,19 @@ function Library(): JSX.Element {
   }, [rag, db, url, importing, invalidate]);
 
   const removePack = useCallback(
-    async (pack: Source) => {
-      if (!db) return;
-      await deleteSource(db, pack.id);
-      invalidate();
+    (pack: Source) => {
+      confirm.ask({
+        title: "Remove this pack?",
+        message: `“${pack.title}” stops being searchable. You can import it again from its link.`,
+        action: "Remove",
+        destructive: true,
+        onConfirm: () => {
+          if (!db) return;
+          void deleteSource(db, pack.id).then(invalidate);
+        },
+      });
     },
-    [db, invalidate]
+    [db, confirm, invalidate]
   );
 
   return (
@@ -96,6 +105,32 @@ function Library(): JSX.Element {
       <ScreenHeader title="Library">
         What the phone is carrying: the model that answers, and the material it answers from.
       </ScreenHeader>
+
+      {/* Its own section, and its own stack of screens behind this one row.
+          Budget shares the offline model with the rest of the app and nothing
+          else — no notes, no retrieval, no OCR — so it earns a door here rather
+          than one of the five slots in the dock. */}
+      <Section title="Money">
+        <Group>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open accounts and wallets"
+            onPress={() => router.push("/budget/accounts")}
+            className="min-h-[56px] flex-row items-center gap-3 px-4 py-3.5 active:bg-surface-tertiary"
+          >
+            <Ionicons name="wallet-outline" size={19} color={palette.muted} />
+            <View className="flex-1 gap-0.5">
+              <Typography.Paragraph className="font-ui-medium text-[15px]">
+                Accounts
+              </Typography.Paragraph>
+              <Typography.Paragraph className="font-ui text-muted text-[12px]">
+                GCash, banks and cash, with what is in each.
+              </Typography.Paragraph>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={palette.muted} />
+          </Pressable>
+        </Group>
+      </Section>
 
       <Section title="How the AI answers">
         <Group>
@@ -200,6 +235,7 @@ function Library(): JSX.Element {
           </Group>
         )}
       </Section>
+      {confirm.dialog}
     </Screen>
   );
 }

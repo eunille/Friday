@@ -1,14 +1,17 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { Typography } from "heroui-native";
 import { useState, type JSX } from "react";
-import { TextInput, View } from "react-native";
+import { Pressable, TextInput, View } from "react-native";
 
+import { useConfirm } from "../components/dialog";
 import { ChoiceRow, Group, PageHeader, PageScroll, SectionTitle } from "../components/screen";
 import {
   APPEARANCES,
   LENGTHS,
   ModelGate,
   TONES,
+  eraseContent,
   systemPrompt,
   useAI,
   type AISettings,
@@ -16,8 +19,9 @@ import {
 import { usePalette } from "../lib/theme";
 
 function Settings(): JSX.Element {
-  const { settings, setSettings, appearance, setAppearance } = useAI();
+  const { settings, setSettings, appearance, setAppearance, db, invalidate } = useAI();
   const router = useRouter();
+  const confirm = useConfirm();
   const palette = usePalette();
 
   // Typing shouldn't write to SQLite on every keystroke; the field commits when
@@ -107,7 +111,45 @@ function Settings(): JSX.Element {
           These apply to answers in Ask. Summaries and quizzes set their own rules on their own
           screens.
         </Typography.Paragraph>
+
+        {/* The app's whole claim is that your material never leaves the phone.
+            What makes that checkable rather than a promise is being able to take
+            it off the phone yourself, in one step, and watch it come back
+            empty. */}
+        <SectionTitle>Your data</SectionTitle>
+        <Group>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() =>
+              confirm.ask({
+                title: "Erase everything?",
+                message:
+                  "Every note, conversation and quiz result on this phone, and everything the assistant learnt from them. The model stays downloaded and your settings are kept.",
+                action: "Erase",
+                destructive: true,
+                onConfirm: () => {
+                  if (db) void eraseContent(db).then(invalidate);
+                },
+              })
+            }
+            className="min-h-[52px] flex-row items-center gap-3 px-4 py-3 active:bg-surface-tertiary"
+          >
+            <Ionicons name="trash-outline" size={19} color={palette.danger} />
+            <View className="flex-1 gap-0.5">
+              <Typography.Paragraph
+                className="font-ui-medium text-[15px]"
+                style={{ color: palette.danger }}
+              >
+                Erase everything
+              </Typography.Paragraph>
+              <Typography.Paragraph className="font-ui text-muted text-[12px]">
+                Notes, conversations and quiz results. Keeps the model and your settings.
+              </Typography.Paragraph>
+            </View>
+          </Pressable>
+        </Group>
       </PageScroll>
+      {confirm.dialog}
     </View>
   );
 }

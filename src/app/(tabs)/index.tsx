@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Typography } from "heroui-native";
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
-import { FlatList, Pressable, TextInput, View } from "react-native";
+import { FlatList, Image, Pressable, TextInput, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -352,6 +352,12 @@ function Chat(): JSX.Element {
           </View>
         )}
         <IconButton
+          name="time-outline"
+          label="Past conversations"
+          tone="muted"
+          onPress={() => router.push("/chats")}
+        />
+        <IconButton
           name="create-outline"
           label="Start a new chat"
           disabled={busy || entries.length === 0}
@@ -397,12 +403,12 @@ function Chat(): JSX.Element {
         keyboardDismissMode="on-drag"
         ListEmptyComponent={
           <View className="gap-4 pt-4">
-            {/* Illustration slot. Drop the finished mascot art in here. */}
-            <View className="items-center justify-center gap-2.5 rounded-3xl border border-dashed border-border py-7">
-              <Mascot size={64} />
-              <Typography.Paragraph className="font-ui text-[10.5px] text-muted-soft">
-                illustration slot · owl with an open book
-              </Typography.Paragraph>
+            <View className="items-center justify-center py-6">
+              <Image
+                source={require("../../../assets/images/splash-icon.png")}
+                style={{ width: 140, height: 104 }}
+                resizeMode="contain"
+              />
             </View>
 
             <View className="gap-2">
