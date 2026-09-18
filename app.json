@@ -11,6 +11,10 @@
     "ios": {
       "supportsTablet": true
     },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/images/favicon.png"
+    },
     "android": {
       "package": "com.eunille.offlineai",
       "adaptiveIcon": {

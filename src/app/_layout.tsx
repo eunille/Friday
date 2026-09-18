@@ -59,6 +59,7 @@ function Themed(): JSX.Element {
         <Stack.Screen name="summary/[id]" />
         <Stack.Screen name="quiz/[id]" />
         <Stack.Screen name="chats" />
+        <Stack.Screen name="budget/index" />
         <Stack.Screen name="budget/accounts" />
         <Stack.Screen name="settings" />
       </Stack>

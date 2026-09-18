@@ -114,17 +114,17 @@ function Library(): JSX.Element {
         <Group>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Open accounts and wallets"
-            onPress={() => router.push("/budget/accounts")}
+            accessibilityLabel="Open money tracking"
+            onPress={() => router.push("/budget")}
             className="min-h-[56px] flex-row items-center gap-3 px-4 py-3.5 active:bg-surface-tertiary"
           >
             <Ionicons name="wallet-outline" size={19} color={palette.muted} />
             <View className="flex-1 gap-0.5">
               <Typography.Paragraph className="font-ui-medium text-[15px]">
-                Accounts
+                Money
               </Typography.Paragraph>
               <Typography.Paragraph className="font-ui text-muted text-[12px]">
-                GCash, banks and cash, with what is in each.
+                Wallets, what came in and what went out.
               </Typography.Paragraph>
             </View>
             <Ionicons name="chevron-forward" size={16} color={palette.muted} />
