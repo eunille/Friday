@@ -183,6 +183,21 @@ export function inMonth(txn: Txn, month: string): boolean {
   return monthKey(txn.at) === month;
 }
 
+/**
+ * `count` month keys ending at `month`, oldest first.
+ *
+ * Built through Date.UTC rather than by subtracting from the month number, so
+ * walking back past January rolls the year instead of producing "2026-00".
+ */
+export function monthsEnding(month: string, count: number): string[] {
+  const [year, index] = month.split("-").map(Number);
+  const months: string[] = [];
+  for (let step = count - 1; step >= 0; step -= 1) {
+    months.push(new Date(Date.UTC(year, index - 1 - step, 1)).toISOString().slice(0, 7));
+  }
+  return months;
+}
+
 export type Totals = { income: Centavos; expense: Centavos; net: Centavos };
 
 /** Transfers are excluded from both sides — see `effectOn`. */

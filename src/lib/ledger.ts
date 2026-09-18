@@ -1,6 +1,6 @@
 import type { DB } from "@op-engineering/op-sqlite";
 
-import type { Account, Txn } from "./budget";
+import type { Account, Category, Centavos, Goal, Txn } from "./budget";
 
 /**
  * Storage for the budget feature. All of the I/O, none of the arithmetic —
@@ -35,10 +35,91 @@ export async function createLedgerTables(db: DB): Promise<void> {
        at           TEXT NOT NULL
      )`
   );
+  await db.execute(
+    `CREATE TABLE IF NOT EXISTS budgets (
+       id       TEXT PRIMARY KEY,
+       category TEXT NOT NULL,
+       amount   INTEGER NOT NULL,
+       month    TEXT NOT NULL
+     )`
+  );
+  await db.execute(
+    `CREATE TABLE IF NOT EXISTS goals (
+       id     TEXT PRIMARY KEY,
+       name   TEXT NOT NULL,
+       target INTEGER NOT NULL,
+       saved  INTEGER NOT NULL DEFAULT 0,
+       by     TEXT
+     )`
+  );
   // Every screen reads newest-first, and the month buckets are prefix scans on
   // the same column.
   await db.execute("CREATE INDEX IF NOT EXISTS txns_at ON txns (at DESC)");
   await db.execute("CREATE INDEX IF NOT EXISTS txns_account ON txns (accountId)");
+  // One budget per category per month. Without this a category could hold two
+  // limits at once and the status shown would depend on read order.
+  await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS budgets_month ON budgets (month, category)");
+}
+
+type BudgetRow = { id: string; category: string; amount: number; month: string };
+
+/** Stored with an id of its own so a row can be edited; keyed by month+category. */
+export type StoredBudget = { id: string; category: Category; limit: Centavos; month: string };
+
+export async function listBudgets(db: DB, month: string): Promise<StoredBudget[]> {
+  const result = await db.execute(
+    "SELECT id, category, amount, month FROM budgets WHERE month = ?",
+    [month]
+  );
+  return (result.rows as unknown as BudgetRow[]).map((row) => ({
+    id: row.id,
+    category: row.category as Category,
+    limit: row.amount,
+    month: row.month,
+  }));
+}
+
+export async function saveBudget(db: DB, budget: StoredBudget): Promise<void> {
+  // Conflict on the pair, not the id: setting a limit for a category that
+  // already has one this month is an edit, even when the screen generated a
+  // fresh id for it.
+  await db.execute(
+    `INSERT INTO budgets (id, category, amount, month) VALUES (?, ?, ?, ?)
+     ON CONFLICT(month, category) DO UPDATE SET amount = excluded.amount`,
+    [budget.id, budget.category, Math.round(budget.limit), budget.month]
+  );
+}
+
+export async function deleteBudget(db: DB, id: string): Promise<void> {
+  await db.execute("DELETE FROM budgets WHERE id = ?", [id]);
+}
+
+type GoalRow = { id: string; name: string; target: number; saved: number; by: string | null };
+
+export async function listGoals(db: DB): Promise<Goal[]> {
+  const result = await db.execute("SELECT id, name, target, saved, by FROM goals");
+  return (result.rows as unknown as GoalRow[]).map((row) => ({
+    id: row.id,
+    name: row.name,
+    target: row.target,
+    saved: row.saved,
+    ...(row.by ? { by: row.by } : {}),
+  }));
+}
+
+export async function saveGoal(db: DB, goal: Goal): Promise<void> {
+  await db.execute(
+    `INSERT INTO goals (id, name, target, saved, by) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET name   = excluded.name,
+                                   target = excluded.target,
+                                   saved  = excluded.saved,
+                                   by     = excluded.by`,
+    [goal.id, goal.name, Math.round(goal.target), Math.round(goal.saved), goal.by ?? null]
+  );
+}
+
+export async function deleteGoal(db: DB, id: string): Promise<void> {
+  await db.execute("DELETE FROM goals WHERE id = ?", [id]);
 }
 
 type AccountRow = {

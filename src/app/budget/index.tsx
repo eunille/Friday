@@ -112,7 +112,9 @@ function Editor({
 
   // Seeded once, never synced back. An effect mirroring `draft` would re-run on
   // every keystroke and rewrite what is being typed.
-  const [amount, setAmount] = useState(() => (draft.amount === 0 ? "" : String(draft.amount / 100)));
+  const [amount, setAmount] = useState(() =>
+    draft.amount === 0 ? "" : String(draft.amount / 100)
+  );
   const editing = draft.amount > 0;
 
   const parsed = parseAmount(amount);
@@ -492,6 +494,64 @@ function Budget(): JSX.Element {
               {live.length === 0
                 ? "Add your first wallet"
                 : `${live.length} wallet${live.length === 1 ? "" : "s"} · ${peso(held)} held`}
+            </Typography.Paragraph>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={palette.muted} />
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Log money by typing it"
+          disabled={live.length === 0}
+          onPress={() => router.push("/budget/ask")}
+          className="min-h-[56px] flex-row items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 active:bg-surface-tertiary"
+          style={{ opacity: live.length === 0 ? 0.5 : 1 }}
+        >
+          <Ionicons name="chatbubble-outline" size={19} color={palette.muted} />
+          <View className="flex-1">
+            <Typography.Paragraph className="font-ui-medium text-[14.5px]">
+              Ask
+            </Typography.Paragraph>
+            <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
+              Type “Starbucks 250 from GCash” and it files itself.
+            </Typography.Paragraph>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={palette.muted} />
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open spending charts"
+          disabled={txns.length === 0}
+          onPress={() => router.push("/budget/charts")}
+          className="min-h-[56px] flex-row items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 active:bg-surface-tertiary"
+          style={{ opacity: txns.length === 0 ? 0.5 : 1 }}
+        >
+          <Ionicons name="stats-chart-outline" size={19} color={palette.muted} />
+          <View className="flex-1">
+            <Typography.Paragraph className="font-ui-medium text-[14.5px]">
+              Charts
+            </Typography.Paragraph>
+            <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
+              In against out, and where it went.
+            </Typography.Paragraph>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={palette.muted} />
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open budgets and savings goals"
+          onPress={() => router.push("/budget/plan")}
+          className="min-h-[56px] flex-row items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 active:bg-surface-tertiary"
+        >
+          <Ionicons name="flag-outline" size={19} color={palette.muted} />
+          <View className="flex-1">
+            <Typography.Paragraph className="font-ui-medium text-[14.5px]">
+              Plan
+            </Typography.Paragraph>
+            <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
+              Monthly limits and what you are saving for.
             </Typography.Paragraph>
           </View>
           <Ionicons name="chevron-forward" size={16} color={palette.muted} />

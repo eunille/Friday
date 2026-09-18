@@ -61,6 +61,9 @@ function Themed(): JSX.Element {
         <Stack.Screen name="chats" />
         <Stack.Screen name="budget/index" />
         <Stack.Screen name="budget/accounts" />
+        <Stack.Screen name="budget/plan" />
+        <Stack.Screen name="budget/ask" />
+        <Stack.Screen name="budget/charts" />
         <Stack.Screen name="settings" />
       </Stack>
       <StatusBar style={booted && theme !== "dark" ? "dark" : "light"} />

@@ -7,6 +7,7 @@ import {
   effectOn,
   goalForecast,
   monthsBetween,
+  monthsEnding,
   netWorth,
   parseAmount,
   peso,
@@ -232,5 +233,16 @@ assert.equal(
   ),
   3
 );
+
+/* --------------------------------------------------------------- months --- */
+
+assert.deepEqual(monthsEnding("2026-09", 3), ["2026-07", "2026-08", "2026-09"], "oldest first");
+assert.equal(monthsEnding("2026-09", 12).length, 12);
+assert.equal(monthsEnding("2026-09", 1)[0], "2026-09", "a run of one is the month itself");
+
+// Walking back past January has to roll the year, not produce "2026-00".
+assert.deepEqual(monthsEnding("2027-01", 3), ["2026-11", "2026-12", "2027-01"]);
+// And back past a whole year.
+assert.equal(monthsEnding("2027-01", 14)[0], "2025-12");
 
 console.log("budget: all checks passed");

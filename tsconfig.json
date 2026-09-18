@@ -2,6 +2,12 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // Modules that Node also runs directly for their checks import with an
+    // explicit .ts, because Node's ESM loader will not resolve the
+    // extensionless path Metro accepts. Metro and Babel do the bundling, so
+    // tsc never emits and this affects type checking only.
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
     "paths": {
       "@/*": ["./src/*"],
       "@/assets/*": ["./assets/*"]
@@ -11,6 +17,7 @@
   "exclude": [
     "src/lib/formats.check.ts",
     "src/lib/nutrition.check.ts",
-    "src/lib/budget.check.ts"
+    "src/lib/budget.check.ts",
+    "src/lib/moneytalk.check.ts"
   ]
 }
