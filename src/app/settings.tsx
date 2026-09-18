@@ -43,7 +43,9 @@ function Settings(): JSX.Element {
       }
 
       if (!(await askAlerts())) {
-        setNotice("Android is blocking notifications for this app. Turn them on in system settings.");
+        setNotice(
+          "Android is blocking notifications for this app. Turn them on in system settings."
+        );
         return;
       }
 
@@ -146,10 +148,6 @@ function Settings(): JSX.Element {
           screens.
         </Typography.Paragraph>
 
-        {/* The app's whole claim is that your material never leaves the phone.
-            What makes that checkable rather than a promise is being able to take
-            it off the phone yourself, in one step, and watch it come back
-            empty. */}
         <SectionTitle>Reminders</SectionTitle>
         <Group>
           <Pressable
@@ -180,6 +178,10 @@ function Settings(): JSX.Element {
           </Pressable>
         </Group>
 
+        {/* The app's whole claim is that your material never leaves the phone.
+            What makes that checkable rather than a promise is being able to take
+            it off the phone yourself, in one step, and watch it come back
+            empty. */}
         <SectionTitle>Your data</SectionTitle>
         <Group>
           <Pressable

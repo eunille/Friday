@@ -460,7 +460,9 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
         : !store
           ? {
               kind: "loading",
-              stage: isFetching("embeddings") ? "Downloading embedding model" : "Opening your notes",
+              stage: isFetching("embeddings")
+                ? "Downloading embedding model"
+                : "Opening your notes",
               progress: download?.of === "embeddings" ? download.progress : 0,
               fetching: isFetching("embeddings"),
             }
@@ -880,14 +882,7 @@ export async function saveQuizResult(
 ): Promise<void> {
   await db.execute(
     "INSERT INTO quiz_results (id, noteId, title, score, total, takenAt) VALUES (?, ?, ?, ?, ?, ?)",
-    [
-      uuidv4(),
-      result.noteId,
-      result.title,
-      result.score,
-      result.total,
-      new Date().toISOString(),
-    ]
+    [uuidv4(), result.noteId, result.title, result.score, result.total, new Date().toISOString()]
   );
 }
 
