@@ -521,6 +521,26 @@ function Budget(): JSX.Element {
 
         <Pressable
           accessibilityRole="button"
+          accessibilityLabel="Open recurring bills and forecast"
+          disabled={live.length === 0}
+          onPress={() => router.push("/budget/bills")}
+          className="min-h-[56px] flex-row items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 active:bg-surface-tertiary"
+          style={{ opacity: live.length === 0 ? 0.5 : 1 }}
+        >
+          <Ionicons name="repeat-outline" size={19} color={palette.muted} />
+          <View className="flex-1">
+            <Typography.Paragraph className="font-ui-medium text-[14.5px]">
+              Repeats
+            </Typography.Paragraph>
+            <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
+              Bills, salary, and what you are left with.
+            </Typography.Paragraph>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={palette.muted} />
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
           accessibilityLabel="Open spending charts"
           disabled={txns.length === 0}
           onPress={() => router.push("/budget/charts")}

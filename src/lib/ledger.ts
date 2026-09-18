@@ -1,6 +1,14 @@
 import type { DB } from "@op-engineering/op-sqlite";
 
-import type { Account, Category, Centavos, Goal, Txn } from "./budget";
+import {
+  dueDates,
+  type Account,
+  type Category,
+  type Centavos,
+  type Goal,
+  type Recurring,
+  type Txn,
+} from "./budget";
 
 /**
  * Storage for the budget feature. All of the I/O, none of the arithmetic —
@@ -50,6 +58,19 @@ export async function createLedgerTables(db: DB): Promise<void> {
        target INTEGER NOT NULL,
        saved  INTEGER NOT NULL DEFAULT 0,
        by     TEXT
+     )`
+  );
+  await db.execute(
+    `CREATE TABLE IF NOT EXISTS recurring (
+       id        TEXT PRIMARY KEY,
+       label     TEXT NOT NULL,
+       kind      TEXT NOT NULL,
+       amount    INTEGER NOT NULL,
+       accountId TEXT NOT NULL,
+       category  TEXT,
+       every     TEXT NOT NULL,
+       startAt   TEXT NOT NULL,
+       lastRun   TEXT
      )`
   );
   // Every screen reads newest-first, and the month buckets are prefix scans on
@@ -259,4 +280,106 @@ export async function saveTxn(db: DB, txn: Txn): Promise<void> {
 
 export async function deleteTxn(db: DB, id: string): Promise<void> {
   await db.execute("DELETE FROM txns WHERE id = ?", [id]);
+}
+
+type RecurringRow = {
+  id: string;
+  label: string;
+  kind: string;
+  amount: number;
+  accountId: string;
+  category: string | null;
+  every: string;
+  // `from` is a reserved word in SQL, so the column is startAt and the seam
+  // between the two names lives here rather than leaking into the domain type.
+  startAt: string;
+  lastRun: string | null;
+};
+
+export async function listRecurring(db: DB): Promise<Recurring[]> {
+  const result = await db.execute(
+    "SELECT id, label, kind, amount, accountId, category, every, startAt, lastRun FROM recurring ORDER BY startAt ASC"
+  );
+  return (result.rows as unknown as RecurringRow[]).map((row) => ({
+    id: row.id,
+    label: row.label,
+    kind: row.kind as Recurring["kind"],
+    amount: row.amount,
+    accountId: row.accountId,
+    ...(row.category ? { category: row.category as Recurring["category"] } : {}),
+    every: row.every as Recurring["every"],
+    from: row.startAt,
+    ...(row.lastRun ? { lastRun: row.lastRun } : {}),
+  }));
+}
+
+export async function saveRecurring(db: DB, rule: Recurring): Promise<void> {
+  await db.execute(
+    `INSERT INTO recurring (id, label, kind, amount, accountId, category, every, startAt, lastRun)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET label     = excluded.label,
+                                   kind      = excluded.kind,
+                                   amount    = excluded.amount,
+                                   accountId = excluded.accountId,
+                                   category  = excluded.category,
+                                   every     = excluded.every,
+                                   startAt   = excluded.startAt,
+                                   lastRun   = excluded.lastRun`,
+    [
+      rule.id,
+      rule.label,
+      rule.kind,
+      Math.round(Math.abs(rule.amount)),
+      rule.accountId,
+      rule.category ?? null,
+      rule.every,
+      rule.from,
+      rule.lastRun ?? null,
+    ]
+  );
+}
+
+export async function deleteRecurring(db: DB, id: string): Promise<void> {
+  await db.execute("DELETE FROM recurring WHERE id = ?", [id]);
+}
+
+/**
+ * Writes every occurrence that has come due and advances `lastRun`.
+ *
+ * `lastRun` is stored rather than worked out from the ledger, so opening the
+ * screen twice in a day cannot write a bill twice. It is advanced only after
+ * the rows are in: if the write fails halfway the rule stays behind and the
+ * next run catches up, which is the safe direction to fail in — a duplicate is
+ * visible and deletable, a silently skipped bill is neither.
+ *
+ * Returns how many rows were written, so the screen can say so.
+ */
+export async function runDue(db: DB, now = new Date()): Promise<number> {
+  const rules = await listRecurring(db);
+  let written = 0;
+
+  for (const rule of rules) {
+    const due = dueDates(rule, now);
+    if (due.length === 0) continue;
+
+    for (const at of due) {
+      await saveTxn(db, {
+        id: `${rule.id}-${at.slice(0, 10)}`,
+        kind: rule.kind,
+        amount: rule.amount,
+        accountId: rule.accountId,
+        ...(rule.category ? { category: rule.category } : {}),
+        note: rule.label,
+        at,
+      });
+      written += 1;
+    }
+
+    await db.execute("UPDATE recurring SET lastRun = ? WHERE id = ?", [
+      due[due.length - 1],
+      rule.id,
+    ]);
+  }
+
+  return written;
 }

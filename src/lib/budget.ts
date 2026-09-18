@@ -330,6 +330,110 @@ export function project(current: Centavos, monthlyRate: Centavos, months: number
   return current + monthlyRate * Math.max(0, months);
 }
 
+/* ------------------------------------------------------------ recurring --- */
+
+export type Every = "daily" | "weekly" | "monthly" | "yearly";
+
+export type Recurring = {
+  id: string;
+  label: string;
+  /** Transfers are not offered: a standing order between your own wallets is
+   *  not a bill, and nothing about a forecast changes when one runs. */
+  kind: "income" | "expense";
+  amount: Centavos;
+  accountId: string;
+  category?: Category;
+  every: Every;
+  /** ISO date of the first occurrence. */
+  from: string;
+  /** ISO date of the last one already written to the ledger. */
+  lastRun?: string;
+};
+
+function addPeriod(date: Date, every: Every): Date {
+  const next = new Date(date);
+  if (every === "daily") next.setUTCDate(next.getUTCDate() + 1);
+  if (every === "weekly") next.setUTCDate(next.getUTCDate() + 7);
+  if (every === "monthly") next.setUTCMonth(next.getUTCMonth() + 1);
+  if (every === "yearly") next.setUTCFullYear(next.getUTCFullYear() + 1);
+  return next;
+}
+
+/** Guards every date walk below: a year of dailies, and no further. */
+const MAX_STEPS = 400;
+
+/**
+ * Every occurrence strictly after `lastRun` and no later than `until`.
+ *
+ * This is what "catch up" means when the app has not been opened for a month:
+ * three weekly occurrences are three rows, not one. Occurrences at or before
+ * `lastRun` are skipped, so running it twice on the same day cannot double a
+ * bill — which is the whole reason `lastRun` is stored rather than inferred.
+ */
+export function dueDates(rule: Recurring, until: Date): string[] {
+  const dates: string[] = [];
+  const limit = until.getTime();
+  const after = rule.lastRun ? new Date(rule.lastRun).getTime() : -Infinity;
+
+  let cursor = new Date(rule.from);
+  for (let step = 0; step < MAX_STEPS; step += 1) {
+    const time = cursor.getTime();
+    if (time > limit) break;
+    if (time > after) dates.push(cursor.toISOString());
+    cursor = addPeriod(cursor, rule.every);
+  }
+  return dates;
+}
+
+/** How many times a rule fires between two dates, for the forecast. */
+function countBetween(rule: Recurring, from: Date, to: Date): number {
+  let cursor = new Date(rule.from);
+  let count = 0;
+  for (let step = 0; step < MAX_STEPS && cursor <= to; step += 1) {
+    if (cursor > from) count += 1;
+    cursor = addPeriod(cursor, rule.every);
+  }
+  return count;
+}
+
+export type Forecast = {
+  /** What is on hand right now. */
+  now: Centavos;
+  /** What is expected to land or leave before `until`. */
+  incoming: Centavos;
+  outgoing: Centavos;
+  /** now + incoming - outgoing. */
+  end: Centavos;
+  /** True when the balance is expected to go under, which is the whole point. */
+  short: boolean;
+};
+
+/**
+ * What the balance looks like at `until`, counting only what is actually known.
+ *
+ * Deliberately just the standing rules, not an extrapolation of ordinary
+ * spending. A projection built from last month's average is a guess wearing the
+ * costume of a fact, and this figure is one people will make decisions on.
+ */
+export function forecast(
+  balance: Centavos,
+  rules: readonly Recurring[],
+  from: Date,
+  until: Date
+): Forecast {
+  let incoming = 0;
+  let outgoing = 0;
+
+  for (const rule of rules) {
+    const times = countBetween(rule, from, until);
+    if (rule.kind === "income") incoming += rule.amount * times;
+    else outgoing += rule.amount * times;
+  }
+
+  const end = balance + incoming - outgoing;
+  return { now: balance, incoming, outgoing, end, short: end < 0 };
+}
+
 /**
  * How many months in a row, counting back from `month`, had money put away.
  *

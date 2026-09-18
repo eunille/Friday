@@ -4,7 +4,9 @@ import {
   balanceOf,
   budgetStatus,
   byCategory,
+  dueDates,
   effectOn,
+  forecast,
   goalForecast,
   monthsBetween,
   monthsEnding,
@@ -16,6 +18,7 @@ import {
   savingsStreak,
   totalsFor,
   type Account,
+  type Recurring,
   type Txn,
 } from "./budget.ts";
 
@@ -244,5 +247,78 @@ assert.equal(monthsEnding("2026-09", 1)[0], "2026-09", "a run of one is the mont
 assert.deepEqual(monthsEnding("2027-01", 3), ["2026-11", "2026-12", "2027-01"]);
 // And back past a whole year.
 assert.equal(monthsEnding("2027-01", 14)[0], "2025-12");
+
+/* ------------------------------------------------------------ recurring --- */
+
+const netflix: Recurring = {
+  id: "r1",
+  label: "Netflix",
+  kind: "expense",
+  amount: 54_900,
+  accountId: "g",
+  category: "subscriptions",
+  every: "monthly",
+  from: "2026-09-01T00:00:00.000Z",
+};
+
+// Never run before: everything from the start date up to today is owed.
+assert.equal(dueDates(netflix, new Date("2026-11-15")).length, 3, "Sep, Oct, Nov");
+
+// Already run through October: only November is left. This is what stops a bill
+// being written twice when the screen is opened twice in a day.
+assert.equal(
+  dueDates({ ...netflix, lastRun: "2026-10-01T00:00:00.000Z" }, new Date("2026-11-15")).length,
+  1
+);
+
+// Caught up to today means nothing is due.
+assert.equal(
+  dueDates({ ...netflix, lastRun: "2026-11-01T00:00:00.000Z" }, new Date("2026-11-15")).length,
+  0
+);
+
+// A rule that starts in the future is not owed anything yet.
+assert.equal(dueDates({ ...netflix, from: "2027-01-01" }, new Date("2026-11-15")).length, 0);
+
+// Missing a month means two rows on the next open, not one merged one.
+assert.equal(
+  dueDates({ ...netflix, lastRun: "2026-09-01T00:00:00.000Z" }, new Date("2026-11-15")).length,
+  2
+);
+
+const weekly: Recurring = { ...netflix, every: "weekly", from: "2026-09-01T00:00:00.000Z" };
+assert.equal(dueDates(weekly, new Date("2026-09-29")).length, 5, "Sep 1, 8, 15, 22, 29");
+
+// The walk is bounded, so a daily rule left running for years cannot hang the
+// screen it is drawn on.
+assert.ok(dueDates({ ...netflix, every: "daily" }, new Date("2030-01-01")).length <= 400);
+
+/* ------------------------------------------------------------- forecast --- */
+
+const salary: Recurring = {
+  id: "r2",
+  label: "Salary",
+  kind: "income",
+  amount: 3_200_000,
+  accountId: "b",
+  every: "monthly",
+  from: "2026-09-15T00:00:00.000Z",
+};
+
+const ahead = forecast(500_000, [salary, netflix], new Date("2026-09-10"), new Date("2026-10-31"));
+assert.equal(ahead.incoming, 6_400_000, "two paydays: Sep 15 and Oct 15");
+assert.equal(ahead.outgoing, 54_900, "one Netflix left in the window, Oct 1");
+assert.equal(ahead.end, ahead.now + ahead.incoming - ahead.outgoing);
+assert.equal(ahead.short, false);
+
+// The part worth having: a window where the bills outrun the balance.
+const squeezed = forecast(10_000, [netflix], new Date("2026-09-10"), new Date("2026-12-31"));
+assert.ok(squeezed.short, "10,000 centavos cannot cover three months of a 54,900 bill");
+assert.ok(squeezed.end < 0);
+
+// No rules at all is not a forecast of ruin, it is simply no change.
+const idle = forecast(500_000, [], new Date("2026-09-10"), new Date("2026-12-31"));
+assert.equal(idle.end, 500_000);
+assert.equal(idle.short, false);
 
 console.log("budget: all checks passed");
