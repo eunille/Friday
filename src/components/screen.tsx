@@ -1,11 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Typography } from "heroui-native";
 import { useState, type ComponentProps, type JSX, type ReactNode } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Image, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { TIERS, useAI } from "../lib/ai";
-import { useKeyboardHeight, usePalette } from "../lib/theme";
+import { useKeyboardHeight, usePalette, useScheme } from "../lib/theme";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -253,7 +253,7 @@ export function PressCard({
   onPress?: () => void;
   className?: string;
 }): JSX.Element {
-  const palette = usePalette();
+  const scheme = useScheme();
   const [down, setDown] = useState(false);
 
   return (
@@ -263,16 +263,24 @@ export function PressCard({
       onPress={onPress}
       onPressIn={() => setDown(true)}
       onPressOut={() => setDown(false)}
-      style={{
-        borderRadius: 20,
-        backgroundColor: palette.pressOffset,
-        marginTop: down ? 3 : 0,
-        paddingBottom: down ? 0 : 3,
-      }}
+      className={`rounded-[20px] border border-border bg-surface ${className}`}
+      style={
+        // A card is lifted by light, and settles when pressed. On a near-black
+        // scheme a shadow is invisible, so there the border carries the edge on
+        // its own and only the scale reads.
+        scheme === "light"
+          ? {
+              shadowColor: "#0e0f12",
+              shadowOpacity: down ? 0.04 : 0.1,
+              shadowRadius: down ? 4 : 14,
+              shadowOffset: { width: 0, height: down ? 1 : 6 },
+              elevation: down ? 1 : 3,
+              transform: [{ scale: down ? 0.985 : 1 }],
+            }
+          : { transform: [{ scale: down ? 0.985 : 1 }] }
+      }
     >
-      <View className={`rounded-[20px] border border-border bg-surface ${className}`}>
-        {children}
-      </View>
+      {children}
     </Pressable>
   );
 }
@@ -295,22 +303,28 @@ export function OnDeviceChip({ label }: { label: string }): JSX.Element {
 }
 
 /**
- * Stand-in for the mascot until there is artwork. Deliberately crude, so that
- * nobody mistakes it for the finished thing.
+ * The mascot, as he appears beside anything he said.
+ *
+ * A head-and-shoulders crop of the launcher artwork rather than the whole
+ * drawing: at 26pt the full sprite is mostly frying pan, and the face — which
+ * is the part that has to be recognisable here — would be four pixels across.
+ *
+ * The badge keeps the icon's dark ground in both themes on purpose. The chef's
+ * hat is near-white, so on a light surface the top half of him disappears.
  */
 export function Mascot({ size = 46 }: { size?: number }): JSX.Element {
-  const palette = usePalette();
-  const eye = Math.round(size * 0.24);
-
   return (
     <View
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
-      className="flex-row items-center justify-center rounded-full bg-accent-soft"
-      style={{ width: size, height: size, borderWidth: 2, borderColor: palette.accent, gap: 5 }}
+      className="items-center justify-center overflow-hidden rounded-full"
+      style={{ width: size, height: size, backgroundColor: "#16181D" }}
     >
-      <View style={{ width: eye, height: eye, borderRadius: eye, backgroundColor: palette.ink }} />
-      <View style={{ width: eye, height: eye, borderRadius: eye, backgroundColor: palette.ink }} />
+      <Image
+        source={require("../../assets/images/mascot-avatar.png")}
+        style={{ width: size, height: size }}
+        resizeMode="contain"
+      />
     </View>
   );
 }

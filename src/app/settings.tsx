@@ -4,11 +4,19 @@ import { useState, type JSX } from "react";
 import { TextInput, View } from "react-native";
 
 import { ChoiceRow, Group, PageHeader, PageScroll, SectionTitle } from "../components/screen";
-import { LENGTHS, ModelGate, TONES, systemPrompt, useAI, type AISettings } from "../lib/ai";
+import {
+  APPEARANCES,
+  LENGTHS,
+  ModelGate,
+  TONES,
+  systemPrompt,
+  useAI,
+  type AISettings,
+} from "../lib/ai";
 import { usePalette } from "../lib/theme";
 
 function Settings(): JSX.Element {
-  const { settings, setSettings } = useAI();
+  const { settings, setSettings, appearance, setAppearance } = useAI();
   const router = useRouter();
   const palette = usePalette();
 
@@ -30,6 +38,20 @@ function Settings(): JSX.Element {
       />
 
       <PageScroll>
+        <SectionTitle>Appearance</SectionTitle>
+        <Group>
+          {(Object.keys(APPEARANCES) as (keyof typeof APPEARANCES)[]).map((key, index) => (
+            <ChoiceRow
+              key={key}
+              first={index === 0}
+              label={APPEARANCES[key].label}
+              note={APPEARANCES[key].note}
+              selected={appearance === key}
+              onPress={() => setAppearance(key)}
+            />
+          ))}
+        </Group>
+
         <SectionTitle>Answer length</SectionTitle>
         <Group>
           {(Object.keys(LENGTHS) as (keyof typeof LENGTHS)[]).map((key, index) => (

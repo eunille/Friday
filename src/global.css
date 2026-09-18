@@ -24,24 +24,26 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Colour — warm ground, three signals
+   Colour — quiet ground, colour only where it means something
 
-   The ground is warm paper. Three hues carry meaning and nothing else may
-   spend them:
+   The chrome is near-monochrome: a cool near-white ground, white cards, and
+   near-black for anything you can press. Restraint is the whole effect — a
+   premium interface spends colour rarely, so when it appears it reads as
+   information rather than decoration.
 
-     orange  --accent      what you can press, and what you said
-     teal    --on-device   this ran on your phone; no network was used
-     amber   --warning     the model is working, or something needs care
+   Three hues survive, and nothing else may spend them:
 
-   This replaces the old rule where amber alone meant "model working". Orange
-   is now the brand colour — it is on every button and every tab — so it can no
-   longer signal anything. Teal took over the offline claim, which is the
-   claim this app actually makes, and amber narrowed to work-in-progress and
-   caution. Spend a signal hue decoratively and it stops meaning anything.
+     green  --on-device   this ran on your phone; no network was used
+     amber  --warning     the model is working, or something needs care
+     red    --danger      something went wrong
+
+   --accent is deliberately not a hue. It is near-black in light and near-white
+   in dark, so the primary action is the highest-contrast thing on screen in
+   either scheme and never competes with the three signals above.
 
    --ink is the one surface that stays dark in both schemes: the status card
-   and the scan dock. It is the app asserting "this is a device, not a cloud",
-   so it must not dissolve into the background when the scheme flips.
+   and the dock. Anything drawn on it takes a fixed on-ink colour rather than a
+   palette token, because --accent inverts and would vanish against it.
 
    Same @layer as heroui's own tokens and imported after them, so these win on
    source order without an escalation war.
@@ -49,134 +51,131 @@
 @layer theme {
   :root {
     @variant light {
-      --background: #fff6ef;
-      --foreground: #241812;
+      --background: #f4f5f7;
+      --foreground: #171a20;
 
       --surface: #ffffff;
       --surface-foreground: var(--foreground);
-      --surface-secondary: #fdf0e6;
+      --surface-secondary: #eceef1;
       --surface-secondary-foreground: var(--foreground);
-      --surface-tertiary: #f5e9e0;
+      --surface-tertiary: #e4e7ec;
       --surface-tertiary-foreground: var(--foreground);
 
       --overlay: #ffffff;
       --overlay-foreground: var(--foreground);
-      --backdrop: rgba(36, 24, 18, 0.32);
+      --backdrop: rgba(14, 15, 18, 0.35);
 
-      --muted: #8a7466;
-      --muted-strong: #7a6252;
-      --muted-soft: #b39f91;
+      --muted: #6b7280;
+      --muted-strong: #4b5563;
+      --muted-soft: #9ca3af;
 
-      --default: #f5e9e0;
+      --default: #eceef1;
       --default-foreground: var(--foreground);
 
-      --accent: #f2621b;
+      --accent: #23262e;
       --accent-foreground: #ffffff;
-      --accent-soft: #ffede1;
-      --accent-deep: #c7440a;
+      --accent-soft: #eceef1;
+      --accent-deep: #000000;
 
-      --on-device: #0b7f6c;
+      --on-device: #0f8f6a;
       --on-device-foreground: #ffffff;
-      --on-device-soft: #ddf5f0;
+      --on-device-soft: #e4f4ee;
 
-      --ink: #241812;
+      --ink: #16181d;
       --ink-foreground: #ffffff;
 
-      --field-background: #fff6ef;
+      --field-background: #ffffff;
       --field-foreground: var(--foreground);
-      --field-placeholder: #b39f91;
-      --field-border: #f0e2d7;
+      --field-placeholder: #9ca3af;
+      --field-border: #e6e8ec;
 
-      --success: #0e8c63;
+      --success: #0f8f6a;
       --success-foreground: #ffffff;
-      --warning: #b47100;
+      --warning: #a9761b;
       --warning-foreground: #ffffff;
-      --warning-soft: #fff3dc;
-      --warning-border: #fbe2b6;
-      --danger: #c13a1e;
+      --warning-soft: #fbf4e6;
+      --warning-border: #eee0c2;
+      --danger: #c4372b;
       --danger-foreground: #ffffff;
-      --danger-soft: #ffe3dc;
+      --danger-soft: #fceceb;
 
       --segment: #ffffff;
       --segment-foreground: var(--foreground);
 
-      --border: #f0e2d7;
-      --separator: #f5e9e0;
+      --border: #e6e8ec;
+      --separator: #eef0f3;
       --focus: var(--accent);
-      --link: var(--accent-deep);
+      --link: var(--accent);
 
-      /* Tinted toward the ink, not neutral grey — a pure-black shadow on a
-         warm ground reads grubby. */
-      --surface-shadow: 0 1px 2px 0 rgba(36, 24, 18, 0.04), 0 6px 16px -10px rgba(36, 24, 18, 0.16);
-      --overlay-shadow: 0 12px 32px -12px rgba(36, 24, 18, 0.28);
+      /* Cards are lifted by shadow rather than outlined. A hairline border and
+         a shadow together read as two competing edges. */
+      --surface-shadow: 0 1px 2px 0 rgba(14, 15, 18, 0.04), 0 8px 24px -12px rgba(14, 15, 18, 0.12);
+      --overlay-shadow: 0 16px 40px -16px rgba(14, 15, 18, 0.24);
       --field-shadow: 0 0 0 0 transparent;
     }
 
-    /* Not in the mockups, which are light-only. Derived by keeping every
-       relationship the light scheme sets up: same warm family, orange
-       lightened until it clears text contrast on brown, and teal/amber taken
-       from the values the mockups already use *on* their dark cards. */
     @variant dark {
-      --background: #1a100b;
-      --foreground: #f7ede5;
+      --background: #0b0c0e;
+      --foreground: #f2f3f5;
 
-      --surface: #241812;
+      --surface: #16181d;
       --surface-foreground: var(--foreground);
-      --surface-secondary: #2e2019;
+      --surface-secondary: #1d2026;
       --surface-secondary-foreground: var(--foreground);
-      --surface-tertiary: #3a2920;
+      --surface-tertiary: #262a31;
       --surface-tertiary-foreground: var(--foreground);
 
-      --overlay: #241812;
+      --overlay: #16181d;
       --overlay-foreground: var(--foreground);
-      --backdrop: rgba(10, 5, 3, 0.62);
+      --backdrop: rgba(0, 0, 0, 0.66);
 
-      --muted: #b39f91;
-      --muted-strong: #c8b5a7;
-      --muted-soft: #8a7466;
+      --muted: #9ca3af;
+      --muted-strong: #c3c8d0;
+      --muted-soft: #6b7280;
 
-      --default: #2e2019;
+      --default: #1d2026;
       --default-foreground: var(--foreground);
 
-      --accent: #ff7a3d;
-      --accent-foreground: #1a100b;
-      --accent-soft: #3a2018;
-      --accent-deep: #ff9c6b;
+      /* Inverted: the brightest thing on a dark screen is the thing to press. */
+      --accent: #f2f3f5;
+      --accent-foreground: #0b0c0e;
+      --accent-soft: #21242a;
+      --accent-deep: #ffffff;
 
-      --on-device: #3ed6b5;
-      --on-device-foreground: #0a2b24;
-      --on-device-soft: #12352e;
+      --on-device: #3ddc97;
+      --on-device-foreground: #06251b;
+      --on-device-soft: #10302a;
 
-      /* Sunk below the ground rather than raised above it — on a brown scheme
-         the only way a "dark card" stays distinct is to go darker still. */
-      --ink: #0f0906;
+      /* Sunk below the ground rather than raised above it — on a near-black
+         scheme the only way a dark card stays distinct is to go darker. */
+      --ink: #000000;
       --ink-foreground: #ffffff;
 
-      --field-background: #241812;
+      --field-background: #16181d;
       --field-foreground: var(--foreground);
-      --field-placeholder: #8a7466;
-      --field-border: #3a2920;
+      --field-placeholder: #6b7280;
+      --field-border: #262a31;
 
-      --success: #3ed6b5;
-      --success-foreground: #0a2b24;
-      --warning: #ffb020;
-      --warning-foreground: #1a100b;
-      --warning-soft: #3a2a10;
-      --warning-border: #55401a;
-      --danger: #ff6b57;
-      --danger-foreground: #2b0a05;
-      --danger-soft: #3d1610;
+      --success: #3ddc97;
+      --success-foreground: #06251b;
+      --warning: #e8b339;
+      --warning-foreground: #0b0c0e;
+      --warning-soft: #2a2412;
+      --warning-border: #453a1c;
+      --danger: #ff6b5e;
+      --danger-foreground: #2b0a07;
+      --danger-soft: #331512;
 
-      --segment: #3a2920;
+      --segment: #262a31;
       --segment-foreground: var(--foreground);
 
-      --border: #3a2920;
-      --separator: #453128;
+      --border: #262a31;
+      --separator: #21242a;
       --focus: var(--accent);
-      --link: var(--accent-deep);
+      --link: var(--accent);
 
       --surface-shadow: 0 0 0 0 transparent;
-      --overlay-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.72);
+      --overlay-shadow: 0 16px 40px -16px rgba(0, 0, 0, 0.8);
       --field-shadow: 0 0 0 0 transparent;
     }
   }

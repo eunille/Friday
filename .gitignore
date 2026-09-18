@@ -49,3 +49,9 @@ yarn-error.*
 # Build output. The APK is distributed through GitHub Releases, not the repo.
 *.apk
 *.aab
+
+# Reference screenshots dropped in at the repo root during design work.
+/image*.png
+/m1.jpg
+/m2.jpg
+/download*.jpg

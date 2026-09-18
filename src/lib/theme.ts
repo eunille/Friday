@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Keyboard, useColorScheme, type LayoutChangeEvent } from "react-native";
+import { Keyboard, type LayoutChangeEvent } from "react-native";
 import {
   KeyboardState,
   runOnJS,
   useAnimatedKeyboard,
   useAnimatedReaction,
 } from "react-native-reanimated";
+import { useUniwind } from "uniwind";
 
 /**
  * The handful of palette values React Navigation needs as raw JS.
@@ -19,57 +20,83 @@ import {
  */
 export const NAV_THEME = {
   light: {
-    background: "#fff6ef",
+    background: "#f4f5f7",
     surface: "#ffffff",
-    border: "#f0e2d7",
-    accent: "#f2621b",
+    border: "#e6e8ec",
+    accent: "#23262e",
     accentForeground: "#ffffff",
-    accentSoft: "#ffede1",
-    accentDeep: "#c7440a",
-    onDevice: "#0b7f6c",
-    onDeviceSoft: "#ddf5f0",
-    ink: "#241812",
+    accentSoft: "#eceef1",
+    accentDeep: "#000000",
+    onDevice: "#0f8f6a",
+    onDeviceSoft: "#e4f4ee",
+    ink: "#16181d",
     inkForeground: "#ffffff",
-    foreground: "#241812",
-    placeholder: "#b39f91",
-    muted: "#8a7466",
-    mutedSoft: "#b39f91",
-    success: "#0e8c63",
-    warning: "#b47100",
-    warningSoft: "#fff3dc",
-    danger: "#c13a1e",
-    pressOffset: "#efdfd2",
+    foreground: "#171a20",
+    placeholder: "#9ca3af",
+    muted: "#6b7280",
+    mutedSoft: "#9ca3af",
+    success: "#0f8f6a",
+    warning: "#a9761b",
+    warningSoft: "#fbf4e6",
+    danger: "#c4372b",
+    pressOffset: "#e4e7ec",
   },
   dark: {
-    background: "#1a100b",
-    surface: "#241812",
-    border: "#3a2920",
-    accent: "#ff7a3d",
-    accentForeground: "#1a100b",
-    accentSoft: "#3a2018",
-    accentDeep: "#ff9c6b",
-    onDevice: "#3ed6b5",
-    onDeviceSoft: "#12352e",
-    ink: "#0f0906",
+    background: "#0b0c0e",
+    surface: "#16181d",
+    border: "#262a31",
+    accent: "#f2f3f5",
+    accentForeground: "#0b0c0e",
+    accentSoft: "#21242a",
+    accentDeep: "#ffffff",
+    onDevice: "#3ddc97",
+    onDeviceSoft: "#10302a",
+    ink: "#000000",
     inkForeground: "#ffffff",
-    foreground: "#f7ede5",
-    placeholder: "#8a7466",
-    muted: "#b39f91",
-    mutedSoft: "#8a7466",
-    success: "#3ed6b5",
-    warning: "#ffb020",
-    warningSoft: "#3a2a10",
-    danger: "#ff6b57",
-    pressOffset: "#0f0906",
+    foreground: "#f2f3f5",
+    placeholder: "#6b7280",
+    muted: "#9ca3af",
+    mutedSoft: "#6b7280",
+    success: "#3ddc97",
+    warning: "#e8b339",
+    warningSoft: "#2a2412",
+    danger: "#ff6b5e",
+    pressOffset: "#262a31",
   },
+} as const;
+
+/**
+ * Drawn *on* the ink dock and status card, which are near-black in both
+ * schemes. --accent inverts between schemes and would disappear against it, so
+ * anything sitting on ink takes a fixed value from here instead.
+ */
+export const ON_INK = {
+  bright: "#ffffff",
+  dim: "rgba(255,255,255,0.52)",
+  faint: "rgba(255,255,255,0.10)",
+  ready: "#3ddc97",
+  working: "#e8b339",
+  error: "#ff6b5e",
 } as const;
 
 /** Widened off the literals so light and dark are the same type. */
 export type NavTheme = Record<keyof (typeof NAV_THEME)["light"], string>;
 
-/** For the few props that take a colour value instead of a className. */
+/**
+ * For the few props that take a colour value instead of a className.
+ *
+ * Reads uniwind's active theme rather than the system one, so the in-app
+ * appearance choice moves the compiled CSS and these raw values together. Two
+ * sources here would mean a light screen with a dark tab bar.
+ */
 export function usePalette(): NavTheme {
-  return NAV_THEME[useColorScheme() === "dark" ? "dark" : "light"];
+  return NAV_THEME[useScheme()];
+}
+
+/** Which of the two schemes is actually showing, after the in-app choice. */
+export function useScheme(): "light" | "dark" {
+  const { theme } = useUniwind();
+  return theme === "dark" ? "dark" : "light";
 }
 
 /**

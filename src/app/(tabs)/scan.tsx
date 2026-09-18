@@ -532,11 +532,11 @@ export default function Scan(): JSX.Element {
                     className={`min-h-[40px] justify-center rounded-full px-3.5 ${
                       age === key ? "" : "border border-border bg-surface"
                     }`}
-                    style={age === key ? { backgroundColor: palette.ink } : undefined}
+                    style={age === key ? { backgroundColor: palette.accent } : undefined}
                   >
                     <Typography.Paragraph
                       className="font-ui-medium text-[12px]"
-                      style={age === key ? { color: palette.inkForeground } : undefined}
+                      style={age === key ? { color: palette.accentForeground } : undefined}
                     >
                       {AGES[key].label}
                     </Typography.Paragraph>

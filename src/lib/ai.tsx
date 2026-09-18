@@ -100,6 +100,19 @@ export const TONES = {
   technical: { label: "Technical", note: "Precise, uses the proper terms." },
 } as const;
 
+/**
+ * Appearance is kept apart from AISettings on purpose: that type is entirely
+ * *what the model is told*, and the settings screen renders it back verbatim.
+ * A display preference does not belong in a prompt.
+ */
+export const APPEARANCES = {
+  system: { label: "Match my phone", note: "Follows the Android setting." },
+  light: { label: "Light", note: "Warm paper, all day." },
+  dark: { label: "Dark", note: "Easier at night." },
+} as const;
+
+export type Appearance = keyof typeof APPEARANCES;
+
 export type AISettings = {
   length: keyof typeof LENGTHS;
   tone: keyof typeof TONES;
@@ -161,6 +174,8 @@ type AIContextValue = {
   setTier: (tier: Tier) => void;
   settings: AISettings;
   setSettings: (settings: AISettings) => void;
+  appearance: Appearance;
+  setAppearance: (appearance: Appearance) => void;
   /** Bumped after every write so list screens know to re-query. */
   revision: number;
   invalidate: () => void;
@@ -186,6 +201,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
   const [store, setStore] = useState<OPSQLiteVectorStore | null>(null);
   const [tier, setTierState] = useState<Tier | null>(null);
   const [settings, setSettingsState] = useState<AISettings>(DEFAULT_SETTINGS);
+  const [appearance, setAppearanceState] = useState<Appearance>("system");
   const [revision, setRevision] = useState(0);
   const [error, setError] = useState<string | null>(null);
   // Tagged with what it belongs to, so a stale percentage never leaks into the
@@ -259,6 +275,10 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
         const savedTier = byKey.get("tier");
         setStore(vectorStore);
         setSettingsState(readSettings(byKey.get("ai")));
+        const savedAppearance = byKey.get("appearance");
+        if (typeof savedAppearance === "string" && savedAppearance in APPEARANCES) {
+          setAppearanceState(savedAppearance as Appearance);
+        }
         setTierState(
           typeof savedTier === "string" && savedTier in TIERS ? (savedTier as Tier) : DEFAULT_TIER
         );
@@ -330,6 +350,17 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
     [store]
   );
 
+  const setAppearance = useCallback(
+    (next: Appearance) => {
+      setAppearanceState(next);
+      void store?.db.execute(
+        "INSERT INTO settings (key, value) VALUES ('appearance', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [next]
+      );
+    },
+    [store]
+  );
+
   const invalidate = useCallback(() => setRevision((r) => r + 1), []);
 
   const retry = useCallback(() => {
@@ -387,6 +418,8 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
       setTier,
       settings,
       setSettings,
+      appearance,
+      setAppearance,
       revision,
       invalidate,
       retry,
@@ -401,6 +434,8 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
     setTier,
     settings,
     setSettings,
+    appearance,
+    setAppearance,
     revision,
     invalidate,
     retry,

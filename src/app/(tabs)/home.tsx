@@ -17,7 +17,7 @@ import {
   type QuizResult,
 } from "../../lib/ai";
 import { preview, relativeDate } from "../../lib/formats";
-import { usePalette } from "../../lib/theme";
+import { ON_INK, usePalette } from "../../lib/theme";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -32,20 +32,6 @@ type Recent = {
   meta: string;
   go: () => void;
 };
-
-/**
- * Colours drawn *on* the ink card. Fixed rather than taken from the palette
- * because `--ink` is dark in both schemes, so a light-scheme teal would be
- * unreadable on it.
- */
-const ON_INK = {
-  ready: "#3ed6b5",
-  working: "#ffb020",
-  error: "#ff6b57",
-  dim: "rgba(255,255,255,0.58)",
-  faint: "rgba(255,255,255,0.12)",
-  warm: "#ffe4c4",
-} as const;
 
 function greeting(): string {
   const hour = new Date().getHours();
@@ -195,10 +181,10 @@ export default function Home(): JSX.Element {
               className="flex-row items-center gap-1 rounded-full px-2.5 py-1"
               style={{ backgroundColor: ON_INK.faint }}
             >
-              <Ionicons name="airplane" size={12} color={ON_INK.working} />
+              <Ionicons name="airplane" size={12} color={ON_INK.bright} />
               <Typography.Paragraph
                 className="font-ui-medium text-[10.5px]"
-                style={{ color: ON_INK.warm }}
+                style={{ color: ON_INK.dim }}
               >
                 No network used
               </Typography.Paragraph>
@@ -223,11 +209,11 @@ export default function Home(): JSX.Element {
               accessibilityLabel={tier ? "Change model" : "Choose a model"}
               onPress={() => router.push("/library")}
               className="rounded-full px-3 py-2 active:opacity-70"
-              style={{ borderWidth: 1, borderColor: "rgba(255,180,32,0.45)" }}
+              style={{ borderWidth: 1, borderColor: ON_INK.dim }}
             >
               <Typography.Paragraph
                 className="font-ui-medium text-[11px]"
-                style={{ color: ON_INK.working }}
+                style={{ color: ON_INK.bright }}
               >
                 {tier ? "Switch" : "Choose"}
               </Typography.Paragraph>

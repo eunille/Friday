@@ -112,11 +112,12 @@ function Turn({
   // — something you read rather than skim.
   if (entry.role === "user") {
     return (
-      <View className="my-2 max-w-[82%] self-end rounded-[18px] rounded-br-md bg-accent px-3.5 py-2.5">
-        <Typography.Paragraph
-          className="font-ui text-[13.5px] leading-[20px]"
-          style={{ color: palette.accentForeground }}
-        >
+      /* A quiet tint, not a filled block. Every question you ask draws one of
+         these, so a solid dark bubble stacks into a column of black down the
+         right of a long conversation. Alignment and the missing avatar already
+         say who is speaking. */
+      <View className="my-2 max-w-[82%] self-end rounded-[18px] rounded-br-md bg-surface-tertiary px-3.5 py-2.5">
+        <Typography.Paragraph className="font-ui text-[13.5px] leading-[20px]">
           {entry.content}
         </Typography.Paragraph>
       </View>
@@ -268,6 +269,11 @@ function Chat(): JSX.Element {
           { role: "assistant", content: answer, cites, ms: Date.now() - started, tokens },
         ];
         setEntries(finished);
+        // Cleared here, batched with setEntries, rather than left to the
+        // `finally` below. Awaiting the save first would yield mid-update and
+        // React would paint one frame holding both the finished answer and the
+        // streaming copy of it — the answer flashing twice.
+        setStreaming(null);
         if (db) {
           await saveChat(db, {
             id: chatId.current,
