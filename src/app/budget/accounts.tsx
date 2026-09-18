@@ -6,7 +6,7 @@ import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-nativ
 
 import { useConfirm } from "../../components/dialog";
 import { IconButton, PageHeader } from "../../components/screen";
-import { ModelGate, newNoteId, useAI } from "../../lib/ai";
+import { DataGate, newNoteId, useAI } from "../../lib/ai";
 import {
   ACCOUNT_TYPES,
   balanceOf,
@@ -316,7 +316,11 @@ function Accounts(): JSX.Element {
             NET WORTH
           </Text>
           <Text
-            style={{ color: palette.inkForeground, fontFamily: "Archivo_600SemiBold", fontSize: 30 }}
+            style={{
+              color: palette.inkForeground,
+              fontFamily: "Archivo_600SemiBold",
+              fontSize: 30,
+            }}
           >
             {peso(total)}
           </Text>
@@ -436,8 +440,8 @@ function Accounts(): JSX.Element {
 
 export default function AccountsScreen(): JSX.Element {
   return (
-    <ModelGate>
+    <DataGate>
       <Accounts />
-    </ModelGate>
+    </DataGate>
   );
 }

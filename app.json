@@ -3,7 +3,7 @@
     "name": "Offline AI",
     "slug": "offline-ai",
     "owner": "dajackal",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "offline-ai",

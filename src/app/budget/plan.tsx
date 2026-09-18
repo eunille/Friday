@@ -6,7 +6,7 @@ import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-nativ
 
 import { useConfirm } from "../../components/dialog";
 import { IconButton, PageHeader, SectionTitle } from "../../components/screen";
-import { ModelGate, newNoteId, useAI } from "../../lib/ai";
+import { DataGate, newNoteId, useAI } from "../../lib/ai";
 import {
   CATEGORIES,
   budgetStatus,
@@ -529,8 +529,8 @@ function Plan(): JSX.Element {
 
 export default function PlanScreen(): JSX.Element {
   return (
-    <ModelGate>
+    <DataGate>
       <Plan />
-    </ModelGate>
+    </DataGate>
   );
 }

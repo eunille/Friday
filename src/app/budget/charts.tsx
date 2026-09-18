@@ -5,7 +5,7 @@ import { ScrollView, Text, View } from "react-native";
 import Svg, { Circle, G, Line, Path, Rect } from "react-native-svg";
 
 import { PageHeader, SectionTitle } from "../../components/screen";
-import { ModelGate, useAI } from "../../lib/ai";
+import { DataGate, useAI } from "../../lib/ai";
 import {
   CATEGORIES,
   byCategory,
@@ -363,8 +363,8 @@ function Charts(): JSX.Element {
 
 export default function ChartsScreen(): JSX.Element {
   return (
-    <ModelGate>
+    <DataGate>
       <Charts />
-    </ModelGate>
+    </DataGate>
   );
 }

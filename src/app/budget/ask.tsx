@@ -6,7 +6,7 @@ import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Mascot, PageHeader } from "../../components/screen";
-import { ModelGate, useAI } from "../../lib/ai";
+import { DataGate, useAI } from "../../lib/ai";
 import {
   ACCOUNT_TYPES,
   CATEGORIES,
@@ -391,8 +391,8 @@ function Ask(): JSX.Element {
 
 export default function AskScreen(): JSX.Element {
   return (
-    <ModelGate>
+    <DataGate>
       <Ask />
-    </ModelGate>
+    </DataGate>
   );
 }

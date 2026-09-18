@@ -7,7 +7,7 @@ import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-nativ
 import { useConfirm } from "../../components/dialog";
 import { syncAlerts } from "../../lib/alerts";
 import { IconButton, PageHeader, SectionTitle } from "../../components/screen";
-import { ModelGate, newNoteId, useAI } from "../../lib/ai";
+import { DataGate, newNoteId, useAI } from "../../lib/ai";
 import {
   ACCOUNT_TYPES,
   CATEGORIES,
@@ -329,18 +329,23 @@ function Bills(): JSX.Element {
             label="Add a repeat"
             bordered
             disabled={live.length === 0}
-            onPress={() =>
+            // Guarded, not inline: the React Compiler hoists live[0].id out of
+            // the closure and runs it during render, where `disabled` cannot
+            // stop it, and an empty account list then throws on open.
+            onPress={() => {
+              const first = live[0];
+              if (!first) return;
               setDraft({
                 id: newNoteId(),
                 label: "",
                 kind: "expense",
                 amount: 0,
-                accountId: live[0].id,
+                accountId: first.id,
                 category: "subscriptions",
                 every: "monthly",
                 from: new Date().toISOString(),
-              })
-            }
+              });
+            }}
           />
         }
       />
@@ -510,8 +515,8 @@ function Bills(): JSX.Element {
 
 export default function BillsScreen(): JSX.Element {
   return (
-    <ModelGate>
+    <DataGate>
       <Bills />
-    </ModelGate>
+    </DataGate>
   );
 }

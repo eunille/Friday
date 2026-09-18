@@ -6,7 +6,7 @@ import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-nativ
 
 import { useConfirm } from "../../components/dialog";
 import { IconButton, PageHeader } from "../../components/screen";
-import { ModelGate, newNoteId, useAI } from "../../lib/ai";
+import { DataGate, newNoteId, useAI } from "../../lib/ai";
 import {
   ACCOUNT_TYPES,
   CATEGORIES,
@@ -420,7 +420,14 @@ function Budget(): JSX.Element {
             label="Add transaction"
             bordered
             disabled={live.length === 0}
-            onPress={() => setDraft(blank(live[0].id))}
+            // Read through a guard rather than as live[0].id inline. The React
+            // Compiler hoists that subexpression out of the closure and
+            // evaluates it during render, where `disabled` cannot protect it —
+            // so with no accounts yet the screen threw before it could draw.
+            onPress={() => {
+              const first = live[0];
+              if (first) setDraft(blank(first.id));
+            }}
           />
         }
       />
@@ -633,8 +640,8 @@ function Budget(): JSX.Element {
 
 export default function BudgetScreen(): JSX.Element {
   return (
-    <ModelGate>
+    <DataGate>
       <Budget />
-    </ModelGate>
+    </DataGate>
   );
 }

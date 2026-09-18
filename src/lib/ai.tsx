@@ -588,6 +588,22 @@ function Warming({ stage }: { stage: string }): JSX.Element {
 }
 
 /**
+ * Renders `children` as soon as storage is open, without waiting for the model.
+ *
+ * The budget screens read and write SQLite and never ask the model anything, so
+ * holding them behind a language model — which on a fresh install means a 400 MB
+ * download, complete with a Cancel button — is a wait for something they do not
+ * use. Once boot has run, `db` exists whatever the model is doing.
+ */
+export function DataGate({ children }: { children: ReactNode }): JSX.Element {
+  const { db } = useAI();
+  if (db) return <>{children}</>;
+  // Storage is not up yet, so fall through to the full gate, which already
+  // knows how to show the boot stages and any error they produced.
+  return <ModelGate>{children}</ModelGate>;
+}
+
+/**
  * Renders `children` only once the models are loaded. Every screen needs this,
  * so it lives next to the provider rather than being repeated four times.
  */

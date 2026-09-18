@@ -245,12 +245,41 @@ export function initExecutorch(): void {
 }
 
 const source = (): Record<string, string> => ({});
+
+/**
+ * Keys must match what the app actually reaches for, not what seems reasonable.
+ * A missing one is not a type error here — it is `undefined` being called at
+ * runtime, which takes the whole screen down with it.
+ */
 export const models = {
   text_embedding: { all_minilm_l6_v2: source },
-  llm: { qwen2_5_0_5b: source, qwen2_5_1_5b: source, qwen3_1_7b: source },
-  ocr: {},
-  stt: {},
+  llm: { qwen2_5_0_5b: source, qwen2_5_1_5b: source, qwen2_5_3b: source },
+  speech_to_text: { whisper_tiny_en: source },
 };
+
+/** scan.tsx takes this straight off the package, not out of `models`. */
+export const OCR_ENGLISH = {};
+
+/* ------------------------------------------------- react-native-audio-api --- */
+
+export const AudioManager = {
+  // Refused rather than granted: a browser tab has no recorder wired up here,
+  // and reporting success would leave the mic button spinning forever.
+  requestRecordingPermissions: () => Promise.resolve("Denied"),
+  setAudioSessionOptions: () => undefined,
+};
+
+export class AudioRecorder {
+  onAudioReady(): void {
+    /* never fires: nothing is being recorded */
+  }
+  start(): Promise<boolean> {
+    return Promise.resolve(false);
+  }
+  stop(): Promise<void> {
+    return Promise.resolve();
+  }
+}
 
 export const ExpoResourceFetcher = {
   cancelFetching: () => Promise.resolve(),
