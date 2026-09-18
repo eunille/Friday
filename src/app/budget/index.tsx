@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { Typography } from "heroui-native";
 import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import Svg, { G, Rect } from "react-native-svg";
 
 import { useConfirm } from "../../components/dialog";
 import { IconButton, PageHeader } from "../../components/screen";
@@ -11,8 +12,9 @@ import {
   ACCOUNT_TYPES,
   CATEGORIES,
   INCOME_SOURCES,
-  balanceOf,
+  byCategory,
   monthKey,
+  monthsEnding,
   netWorth,
   parseAmount,
   peso,
@@ -35,6 +37,97 @@ const KINDS: { kind: TxnKind; label: string }[] = [
 
 const CATEGORY_KEYS = Object.keys(CATEGORIES) as Category[];
 const SOURCE_KEYS = Object.keys(INCOME_SOURCES) as IncomeSource[];
+
+/**
+ * In against out, six months, drawn small.
+ *
+ * Deliberately unlabelled. At this size axis figures are unreadable and the
+ * point is the silhouette — whether the dark bars are outgrowing the light
+ * ones. The Charts screen carries the same thing with its numbers.
+ */
+function SixMonths({ txns, month }: { txns: readonly Txn[]; month: string }): JSX.Element {
+  const palette = usePalette();
+  const W = 300;
+  const H = 54;
+  const rows = monthsEnding(month, 6).map((key) => totalsFor(txns, key));
+  // Floored at 1 so a run of empty months divides by something instead of
+  // producing NaN heights that quietly render nothing at all.
+  const peak = Math.max(1, ...rows.map((row) => Math.max(row.income, row.expense)));
+  const slot = W / rows.length;
+
+  return (
+    <Svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`}>
+      {rows.map((row, index) => {
+        const centre = slot * index + slot / 2;
+        const income = (row.income / peak) * (H - 4);
+        const expense = (row.expense / peak) * (H - 4);
+        return (
+          <G key={index}>
+            <Rect
+              x={centre - 11}
+              y={H - income}
+              width={9}
+              height={income}
+              rx={2}
+              fill={palette.onDevice}
+            />
+            <Rect
+              x={centre + 2}
+              y={H - expense}
+              width={9}
+              height={expense}
+              rx={2}
+              fill={palette.money}
+            />
+          </G>
+        );
+      })}
+    </Svg>
+  );
+}
+
+/** Where this month went, as one bar rather than a ring — it costs less height. */
+function Split({ txns, month }: { txns: readonly Txn[]; month: string }): JSX.Element {
+  const palette = usePalette();
+  const rows = byCategory(txns, month).slice(0, 4);
+  const total = rows.reduce((sum, row) => sum + row.total, 0);
+  if (total === 0) return <View />;
+
+  return (
+    <View className="gap-2">
+      <View className="h-2 flex-row gap-0.5 overflow-hidden rounded-full">
+        {rows.map((row, index) => (
+          <View
+            key={row.category}
+            style={{
+              flex: row.total,
+              backgroundColor: palette.foreground,
+              opacity: 1 - index * 0.2,
+            }}
+          />
+        ))}
+      </View>
+      <View className="flex-row flex-wrap gap-x-3 gap-y-1">
+        {rows.map((row, index) => (
+          <View key={row.category} className="flex-row items-center gap-1.5">
+            <View
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: 2,
+                backgroundColor: palette.foreground,
+                opacity: 1 - index * 0.2,
+              }}
+            />
+            <Typography.Paragraph className="font-ui text-muted text-[10.5px]">
+              {CATEGORIES[row.category].label} {Math.round((row.total / total) * 100)}%
+            </Typography.Paragraph>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
 
 /** A fresh expense, dated now, against whichever account comes first. */
 function blank(accountId: string): Txn {
@@ -342,7 +435,10 @@ function Row({
           {txn.note?.trim() || title}
         </Typography.Paragraph>
         <Typography.Paragraph className="font-ui text-muted text-[11.5px]" numberOfLines={1}>
-          {relativeDate(txn.at)} · {txn.kind === "transfer" ? title : (from?.name ?? "Unknown")}
+          {/* A transfer already says both ends on the line above, so repeating
+              the route here would print it twice. */}
+          {relativeDate(txn.at)}
+          {txn.kind === "transfer" ? "" : ` · ${from?.name ?? "Unknown"}`}
         </Typography.Paragraph>
       </View>
       {/* A transfer carries no sign: nothing was gained or lost, so either one
@@ -383,6 +479,16 @@ function Budget(): JSX.Element {
     [txns, filter]
   );
 
+  /** How many of the last six months have anything in them. */
+  const active = useMemo(
+    () =>
+      monthsEnding(month, 6).filter((key) => {
+        const totals = totalsFor(txns, key);
+        return totals.income > 0 || totals.expense > 0;
+      }).length,
+    [txns, month]
+  );
+
   const commit = useCallback(() => {
     if (!db || !draft) return;
     void saveTxn(db, draft).then(() => {
@@ -403,11 +509,6 @@ function Budget(): JSX.Element {
       onConfirm: () => void deleteTxn(db, target.id).then(refresh),
     });
   }, [db, draft, confirm, refresh]);
-
-  const held = useMemo(
-    () => live.reduce((sum, account) => sum + balanceOf(account, txns), 0),
-    [live, txns]
-  );
 
   return (
     <View className="flex-1 bg-background">
@@ -433,156 +534,160 @@ function Budget(): JSX.Element {
       />
 
       <ScrollView contentContainerClassName="px-4 pt-4 pb-10 gap-4">
-        <View className="gap-3 rounded-[22px] p-4" style={{ backgroundColor: palette.ink }}>
+        {/* The one saturated surface in the app. Money is the subject of this
+            screen, so the balance carries the colour and everything below it
+            stays quiet — one bold thing reads as emphasis, six read as noise. */}
+        <View className="gap-3 rounded-[22px] p-4" style={{ backgroundColor: palette.money }}>
           <View>
             <Text
               style={{
-                color: palette.inkForeground,
-                opacity: 0.6,
-                fontFamily: "Archivo_600SemiBold",
-                fontSize: 10.5,
-                letterSpacing: 1,
+                color: palette.moneyForeground,
+                opacity: 0.75,
+                fontFamily: "Archivo_500Medium",
+                fontSize: 12,
               }}
             >
-              TOTAL BALANCE
+              Total balance
             </Text>
             <Text
               style={{
-                color: palette.inkForeground,
+                color: palette.moneyForeground,
                 fontFamily: "Archivo_600SemiBold",
-                fontSize: 30,
+                fontSize: 34,
+                letterSpacing: -0.5,
               }}
             >
               {peso(netWorth(live, txns))}
             </Text>
           </View>
-          <View className="flex-row gap-6">
+          <View className="flex-row flex-wrap gap-x-5 gap-y-1">
             {[
-              { label: "In this month", value: totals.income },
-              { label: "Out this month", value: totals.expense },
+              { icon: "arrow-down", label: "in this month", value: totals.income },
+              { icon: "arrow-up", label: "out this month", value: totals.expense },
             ].map((item) => (
-              <View key={item.label}>
+              <View key={item.label} className="flex-row items-center gap-1.5">
+                <Ionicons
+                  name={item.icon as never}
+                  size={13}
+                  color={palette.moneyForeground}
+                  style={{ opacity: 0.75 }}
+                />
                 <Text
                   style={{
-                    color: palette.inkForeground,
-                    opacity: 0.55,
-                    fontFamily: "Archivo_400Regular",
-                    fontSize: 11,
-                  }}
-                >
-                  {item.label}
-                </Text>
-                <Text
-                  style={{
-                    color: palette.inkForeground,
+                    color: palette.moneyForeground,
                     fontFamily: "Archivo_600SemiBold",
-                    fontSize: 15,
+                    fontSize: 14,
                   }}
                 >
                   {peso(item.value)}
+                </Text>
+                <Text
+                  style={{
+                    color: palette.moneyForeground,
+                    opacity: 0.7,
+                    fontFamily: "Archivo_400Regular",
+                    fontSize: 12,
+                  }}
+                >
+                  {item.label}
                 </Text>
               </View>
             ))}
           </View>
         </View>
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Open accounts"
-          onPress={() => router.push("/budget/accounts")}
-          className="min-h-[56px] flex-row items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 active:bg-surface-tertiary"
-        >
-          <Ionicons name="wallet-outline" size={19} color={palette.muted} />
-          <View className="flex-1">
-            <Typography.Paragraph className="font-ui-medium text-[14.5px]">
-              Accounts
-            </Typography.Paragraph>
-            <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
-              {live.length === 0
-                ? "Add your first wallet"
-                : `${live.length} wallet${live.length === 1 ? "" : "s"} · ${peso(held)} held`}
-            </Typography.Paragraph>
-          </View>
-          <Ionicons name="chevron-forward" size={16} color={palette.muted} />
-        </Pressable>
+        {/* Navigation, not content. Four tiles in a row rather than five
+            stacked full-width cards: these are doors, and a door does not need
+            a paragraph explaining it. Each keeps its own hue, so the colour
+            answers "where does this go" before the label has been read. */}
+        <View className="flex-row gap-2.5">
+          {[
+            {
+              key: "accounts",
+              icon: "wallet",
+              label: "Wallets",
+              tint: palette.wallets,
+              go: () => router.push("/budget/accounts"),
+              off: false,
+            },
+            {
+              key: "ask",
+              icon: "chatbubble-ellipses",
+              label: "Ask",
+              tint: palette.ask,
+              go: () => router.push("/budget/ask"),
+              off: live.length === 0,
+            },
+            {
+              key: "bills",
+              icon: "repeat",
+              label: "Repeats",
+              tint: palette.warning,
+              go: () => router.push("/budget/bills"),
+              off: live.length === 0,
+            },
+            {
+              key: "plan",
+              icon: "flag",
+              label: "Plan",
+              tint: palette.plan,
+              go: () => router.push("/budget/plan"),
+              off: false,
+            },
+          ].map((tile) => (
+            <Pressable
+              key={tile.key}
+              accessibilityRole="button"
+              accessibilityLabel={tile.label}
+              disabled={tile.off}
+              onPress={tile.go}
+              className="flex-1 items-center gap-1.5 rounded-2xl border border-border bg-surface py-3 active:bg-surface-tertiary"
+              style={{ opacity: tile.off ? 0.45 : 1 }}
+            >
+              <View
+                className="h-9 w-9 items-center justify-center rounded-xl"
+                style={{ backgroundColor: `${tile.tint}22` }}
+              >
+                <Ionicons name={tile.icon as never} size={17} color={tile.tint} />
+              </View>
+              <Text style={{ fontFamily: "Archivo_500Medium", fontSize: 11, color: palette.muted }}>
+                {tile.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Log money by typing it"
-          disabled={live.length === 0}
-          onPress={() => router.push("/budget/ask")}
-          className="min-h-[56px] flex-row items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 active:bg-surface-tertiary"
-          style={{ opacity: live.length === 0 ? 0.5 : 1 }}
-        >
-          <Ionicons name="chatbubble-outline" size={19} color={palette.muted} />
-          <View className="flex-1">
-            <Typography.Paragraph className="font-ui-medium text-[14.5px]">
-              Ask
-            </Typography.Paragraph>
-            <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
-              Type “Starbucks 250 from GCash” and it files itself.
-            </Typography.Paragraph>
-          </View>
-          <Ionicons name="chevron-forward" size={16} color={palette.muted} />
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Open recurring bills and forecast"
-          disabled={live.length === 0}
-          onPress={() => router.push("/budget/bills")}
-          className="min-h-[56px] flex-row items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 active:bg-surface-tertiary"
-          style={{ opacity: live.length === 0 ? 0.5 : 1 }}
-        >
-          <Ionicons name="repeat-outline" size={19} color={palette.muted} />
-          <View className="flex-1">
-            <Typography.Paragraph className="font-ui-medium text-[14.5px]">
-              Repeats
-            </Typography.Paragraph>
-            <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
-              Bills, salary, and what you are left with.
-            </Typography.Paragraph>
-          </View>
-          <Ionicons name="chevron-forward" size={16} color={palette.muted} />
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Open spending charts"
-          disabled={txns.length === 0}
-          onPress={() => router.push("/budget/charts")}
-          className="min-h-[56px] flex-row items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 active:bg-surface-tertiary"
-          style={{ opacity: txns.length === 0 ? 0.5 : 1 }}
-        >
-          <Ionicons name="stats-chart-outline" size={19} color={palette.muted} />
-          <View className="flex-1">
-            <Typography.Paragraph className="font-ui-medium text-[14.5px]">
-              Charts
-            </Typography.Paragraph>
-            <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
-              In against out, and where it went.
-            </Typography.Paragraph>
-          </View>
-          <Ionicons name="chevron-forward" size={16} color={palette.muted} />
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Open budgets and savings goals"
-          onPress={() => router.push("/budget/plan")}
-          className="min-h-[56px] flex-row items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 active:bg-surface-tertiary"
-        >
-          <Ionicons name="flag-outline" size={19} color={palette.muted} />
-          <View className="flex-1">
-            <Typography.Paragraph className="font-ui-medium text-[14.5px]">
-              Plan
-            </Typography.Paragraph>
-            <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
-              Monthly limits and what you are saving for.
-            </Typography.Paragraph>
-          </View>
-          <Ionicons name="chevron-forward" size={16} color={palette.muted} />
-        </Pressable>
+        {/* The dashboard, in place rather than one tap away. The shape of the
+            month is the reason to open this screen, so it should not be hiding
+            behind a row labelled Charts. */}
+        {txns.length > 0 && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open full charts"
+            onPress={() => router.push("/budget/charts")}
+            className="gap-3 rounded-2xl border border-border bg-surface p-3.5 active:opacity-80"
+          >
+            <View className="flex-row items-center justify-between">
+              {/* Names what is actually drawn. The bars wait for a second
+                  month, so a fixed "Six months" would be a heading over
+                  something else. */}
+              <Typography.Paragraph className="font-ui-bold text-[14px]">
+                {active >= 2 ? "Six months" : "Where it went"}
+              </Typography.Paragraph>
+              <View className="flex-row items-center gap-1">
+                <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
+                  All charts
+                </Typography.Paragraph>
+                <Ionicons name="chevron-forward" size={13} color={palette.muted} />
+              </View>
+            </View>
+            {/* A run of six bars where five are empty reads as a broken chart
+                rather than a new ledger, so it waits until there is a shape to
+                show. The split below works from one month. */}
+            {active >= 2 && <SixMonths txns={txns} month={month} />}
+            <Split txns={txns} month={month} />
+          </Pressable>
+        )}
 
         {live.length === 0 ? (
           <Typography.Paragraph className="pt-4 text-center font-read text-muted text-[15px] leading-6">

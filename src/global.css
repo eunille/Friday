@@ -31,11 +31,25 @@
    premium interface spends colour rarely, so when it appears it reads as
    information rather than decoration.
 
-   Three hues survive, and nothing else may spend them:
+   Three hues carry a state, and nothing else may spend them:
 
      green  --on-device   this ran on your phone; no network was used
      amber  --warning     the model is working, or something needs care
      red    --danger      something went wrong
+
+   Four more name a destination inside Money. Each belongs to exactly one
+   screen and appears as a small icon chip, so the colour says where a tap goes
+   before the label has been read:
+
+     blue    --money      balance, and the one saturated surface in the app
+     violet  --wallets    accounts
+     orange  --ask        logging by typing; the mascot's own colour
+     cyan    --plan       limits and goals
+
+   What keeps this from becoming a paint chart: a hue appears once per screen,
+   at chip size, and never behind text. The balance hero is the single
+   exception, and it is deliberate — one bold surface reads as emphasis, six
+   read as noise.
 
    --accent is deliberately not a hue. It is near-black in light and near-white
    in dark, so the primary action is the highest-contrast thing on screen in
@@ -83,6 +97,12 @@
 
       --ink: #16181d;
       --ink-foreground: #ffffff;
+
+      --money: #2f6bf6;
+      --money-foreground: #ffffff;
+      --wallets: #6d4df6;
+      --ask: #dd5f34;
+      --plan: #0d8fa6;
 
       --field-background: #ffffff;
       --field-foreground: var(--foreground);
@@ -150,6 +170,17 @@
          scheme the only way a dark card stays distinct is to go darker. */
       --ink: #000000;
       --ink-foreground: #ffffff;
+
+      /* Chips are lifted for a near-black ground, where the light-scheme values
+         go muddy at 16px. --money is the exception: it is a large surface, not
+         a chip, so it stays deep enough to carry white text. A blue light
+         enough to glow would force near-black type on it, which reads as a
+         disabled card rather than the brightest thing on the screen. */
+      --money: #3d6fe8;
+      --money-foreground: #ffffff;
+      --wallets: #9b85ff;
+      --ask: #ff8f66;
+      --plan: #3fc9de;
 
       --field-background: #16181d;
       --field-foreground: var(--foreground);

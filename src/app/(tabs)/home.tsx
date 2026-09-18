@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { Typography } from "heroui-native";
-import { useEffect, useState, type ComponentProps, type JSX } from "react";
+import { useEffect, useMemo, useState, type ComponentProps, type JSX } from "react";
 import { Pressable, View } from "react-native";
 
 import { useConfirm } from "../../components/dialog";
@@ -20,7 +20,16 @@ import {
   type Note,
   type QuizResult,
 } from "../../lib/ai";
+import {
+  monthKey,
+  netWorth,
+  peso,
+  totalsFor,
+  type Account,
+  type Txn,
+} from "../../lib/budget";
 import { preview, relativeDate } from "../../lib/formats";
+import { listAccounts, listTxns } from "../../lib/ledger";
 import { ON_INK, usePalette } from "../../lib/theme";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
@@ -92,9 +101,20 @@ export default function Home(): JSX.Element {
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [quizzes, setQuizzes] = useState<QuizResult[]>([]);
   const [weak, setWeak] = useState<QuizResult[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [txns, setTxns] = useState<Txn[]>([]);
+
+  const wallets = useMemo(() => accounts.filter((account) => !account.archived), [accounts]);
+  const balance = useMemo(() => netWorth(wallets, txns), [wallets, txns]);
+  const thisMonth = useMemo(
+    () => totalsFor(txns, monthKey(new Date().toISOString())),
+    [txns]
+  );
 
   useEffect(() => {
     if (!db) return;
+    void listAccounts(db).then(setAccounts);
+    void listTxns(db).then(setTxns);
     void listNotes(db).then(setNotes);
     void listChats(db, 5).then(setChats);
     void listQuizResults(db, 5).then(setQuizzes);
@@ -235,6 +255,44 @@ export default function Home(): JSX.Element {
             </Pressable>
           </View>
         </View>
+
+        {/* A strip rather than a fifth tile in a grid of four. Money is the one
+            shortcut with a number worth showing, and a shortcut that answers
+            "how much have I got" before you tap it is worth more than one that
+            only opens a screen. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={wallets.length === 0 ? "Track your money" : `Money, ${peso(balance)}`}
+          onPress={() => router.push("/budget")}
+          className="flex-row items-center gap-3 rounded-[20px] p-4 active:opacity-90"
+          style={{ backgroundColor: palette.money }}
+        >
+          <View className="flex-1 gap-0.5">
+            <Typography.Paragraph
+              className="font-ui-medium text-[11.5px]"
+              style={{ color: palette.moneyForeground, opacity: 0.75 }}
+            >
+              {wallets.length === 0
+                ? "Money"
+                : `Across ${wallets.length} wallet${wallets.length === 1 ? "" : "s"}`}
+            </Typography.Paragraph>
+            <Typography.Paragraph
+              className="font-ui-bold text-[24px]"
+              style={{ color: palette.moneyForeground }}
+            >
+              {wallets.length === 0 ? "Track your money" : peso(balance)}
+            </Typography.Paragraph>
+            <Typography.Paragraph
+              className="font-ui text-[11.5px]"
+              style={{ color: palette.moneyForeground, opacity: 0.75 }}
+            >
+              {wallets.length === 0
+                ? "GCash, banks and cash, all on this phone"
+                : `${peso(thisMonth.income)} in · ${peso(thisMonth.expense)} out this month`}
+            </Typography.Paragraph>
+          </View>
+          <Ionicons name="arrow-forward" size={18} color={palette.moneyForeground} />
+        </Pressable>
 
         <View className="gap-2.5">
           <View className="flex-row items-baseline justify-between">

@@ -2,10 +2,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { Typography } from "heroui-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Mascot, PageHeader } from "../../components/screen";
+import { PageHeader } from "../../components/screen";
 import { DataGate, useAI } from "../../lib/ai";
 import {
   ACCOUNT_TYPES,
@@ -79,6 +79,31 @@ function answer(
   if (wantsHave) return `${peso(netWorth(accounts, txns))} across ${accounts.length} accounts.`;
 
   return null;
+}
+
+/**
+ * The money assistant's own face: the same creature as the chef, in a
+ * deerstalker with a magnifying glass.
+ *
+ * A separate avatar rather than reusing Mascot, because this one does a
+ * different job. The chef answers questions about your notes; this one goes
+ * through your spending. Same character, so the app still feels like one app.
+ */
+function Detective({ size = 30 }: { size?: number }): JSX.Element {
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      className="items-center justify-center overflow-hidden rounded-full"
+      style={{ width: size, height: size, backgroundColor: "#16181D" }}
+    >
+      <Image
+        source={require("../../../assets/images/detective-avatar.png")}
+        style={{ width: size, height: size }}
+        resizeMode="contain"
+      />
+    </View>
+  );
 }
 
 type Turn =
@@ -220,7 +245,7 @@ function Ask(): JSX.Element {
       >
         {turns.length === 0 && (
           <View className="items-center gap-3 pt-6">
-            <Mascot size={56} />
+            <Detective size={56} />
             <Typography.Paragraph className="text-center font-read text-muted text-[14.5px] leading-[23px]">
               Type what you spent and it goes in the ledger. Several at once is fine, one per line.
               Nothing is saved until you say so.
@@ -261,7 +286,7 @@ function Ask(): JSX.Element {
           if (turn.role === "bot") {
             return (
               <View key={index} className="flex-row gap-2.5">
-                <Mascot size={30} />
+                <Detective />
                 <View className="flex-1 rounded-[18px] rounded-bl-md border border-border bg-surface px-3.5 py-3">
                   <Typography.Paragraph className="font-read text-[14.5px] leading-[23px]">
                     {turn.text}
@@ -273,7 +298,7 @@ function Ask(): JSX.Element {
 
           return (
             <View key={index} className="flex-row gap-2.5">
-              <Mascot size={30} />
+              <Detective />
               <View className="flex-1 gap-2.5 rounded-[18px] rounded-bl-md border border-border bg-surface p-3">
                 <View className="flex-row items-center gap-1.5 self-start rounded-full bg-on-device-soft px-2.5 py-1">
                   <Ionicons

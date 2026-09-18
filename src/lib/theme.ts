@@ -40,6 +40,12 @@ export const NAV_THEME = {
     warningSoft: "#fbf4e6",
     danger: "#c4372b",
     pressOffset: "#e4e7ec",
+    // One hue per destination inside Money — see the colour note in global.css.
+    money: "#2f6bf6",
+    moneyForeground: "#ffffff",
+    wallets: "#6d4df6",
+    ask: "#dd5f34",
+    plan: "#0d8fa6",
   },
   dark: {
     background: "#0b0c0e",
@@ -62,6 +68,11 @@ export const NAV_THEME = {
     warningSoft: "#2a2412",
     danger: "#ff6b5e",
     pressOffset: "#262a31",
+    money: "#3d6fe8",
+    moneyForeground: "#ffffff",
+    wallets: "#9b85ff",
+    ask: "#ff8f66",
+    plan: "#3fc9de",
   },
 } as const;
 
