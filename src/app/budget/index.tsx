@@ -12,6 +12,7 @@ import {
   ACCOUNT_TYPES,
   CATEGORIES,
   INCOME_SOURCES,
+  balanceOf,
   byCategory,
   monthKey,
   monthsEnding,
@@ -20,13 +21,22 @@ import {
   peso,
   totalsFor,
   type Account,
+  type AccountType,
   type Category,
   type IncomeSource,
   type Txn,
   type TxnKind,
 } from "../../lib/budget";
 import { relativeDate } from "../../lib/formats";
-import { deleteTxn, listAccounts, listTxns, saveTxn } from "../../lib/ledger";
+import {
+  countTxns,
+  deleteAccount,
+  deleteTxn,
+  listAccounts,
+  listTxns,
+  saveAccount,
+  saveTxn,
+} from "../../lib/ledger";
 import { usePalette } from "../../lib/theme";
 
 const KINDS: { kind: TxnKind; label: string }[] = [
@@ -36,6 +46,7 @@ const KINDS: { kind: TxnKind; label: string }[] = [
 ];
 
 const CATEGORY_KEYS = Object.keys(CATEGORIES) as Category[];
+const WALLET_TYPES = Object.keys(ACCOUNT_TYPES) as AccountType[];
 const SOURCE_KEYS = Object.keys(INCOME_SOURCES) as IncomeSource[];
 
 /**
@@ -126,6 +137,190 @@ function Split({ txns, month }: { txns: readonly Txn[]; month: string }): JSX.El
         ))}
       </View>
     </View>
+  );
+}
+
+/**
+ * One wallet, as a card you can swipe past.
+ *
+ * Brand colour, white type: you find GCash by its blue rather than by reading
+ * five labels. These are the only saturated things on the screen apart from the
+ * balance above them.
+ */
+function WalletCard({
+  account,
+  balance,
+  onPress,
+}: {
+  account: Account;
+  balance: number;
+  onPress: () => void;
+}): JSX.Element {
+  const brand = ACCOUNT_TYPES[account.type];
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${account.name}, ${peso(balance)}`}
+      onPress={onPress}
+      className="h-[92px] w-[150px] justify-between rounded-[18px] p-3 active:opacity-85"
+      style={{ backgroundColor: brand.colour }}
+    >
+      <View className="flex-row items-center gap-1.5">
+        <View className="h-5 w-5 items-center justify-center rounded-md bg-white/25">
+          <Text style={{ color: "#fff", fontFamily: "Archivo_600SemiBold", fontSize: 10 }}>
+            {account.name.slice(0, 1).toUpperCase()}
+          </Text>
+        </View>
+        <Text
+          numberOfLines={1}
+          style={{ flex: 1, color: "#fff", fontFamily: "Archivo_600SemiBold", fontSize: 12.5 }}
+        >
+          {account.name}
+        </Text>
+      </View>
+      <Text style={{ color: "#fff", fontFamily: "Archivo_600SemiBold", fontSize: 16 }}>
+        {peso(balance)}
+      </Text>
+    </Pressable>
+  );
+}
+
+/** Add and edit are the same three fields, so they are the same sheet. */
+function WalletEditor({
+  draft,
+  onChange,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  draft: Account;
+  onChange: (next: Account) => void;
+  onClose: () => void;
+  onSave: () => void;
+  onDelete: () => void;
+}): JSX.Element {
+  const palette = usePalette();
+
+  // Seeded once, never synced back. The caller remounts this per wallet, so an
+  // effect mirroring `draft` would re-run on every keystroke and rewrite what is
+  // being typed — "250." would become "250" under the cursor.
+  const [amount, setAmount] = useState(() =>
+    draft.openingBalance === 0 ? "" : String(draft.openingBalance / 100)
+  );
+  const existing = draft.name.trim() !== "";
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" }}>
+        <View className="gap-4 rounded-t-[26px] border border-border bg-surface p-5 pb-8">
+          <View className="flex-row items-center justify-between">
+            <Typography.Heading type="h2" className="font-ui-bold text-[19px]">
+              {existing ? "Edit wallet" : "New wallet"}
+            </Typography.Heading>
+            <IconButton name="close" label="Close" tone="muted" onPress={onClose} />
+          </View>
+
+          <TextInput
+            value={draft.name}
+            onChangeText={(name) => onChange({ ...draft, name })}
+            placeholder="Wallet name"
+            placeholderTextColor={palette.muted}
+            className="rounded-xl border border-border bg-background px-3.5 py-3 font-ui text-[15px] text-foreground"
+          />
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="-mx-1">
+            <View className="flex-row gap-2 px-1">
+              {WALLET_TYPES.map((type) => {
+                const brand = ACCOUNT_TYPES[type];
+                const on = draft.type === type;
+                return (
+                  <Pressable
+                    key={type}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: on }}
+                    onPress={() =>
+                      onChange({
+                        ...draft,
+                        type,
+                        // An untouched name follows the type, so picking GCash
+                        // fills in "GCash" and most wallets need no typing.
+                        name: draft.name.trim() === "" ? brand.label : draft.name,
+                      })
+                    }
+                    className="min-h-[36px] justify-center rounded-full border px-3.5"
+                    style={{
+                      backgroundColor: on ? brand.colour : "transparent",
+                      borderColor: on ? brand.colour : palette.border,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: "Archivo_600SemiBold",
+                        fontSize: 12.5,
+                        color: on ? "#fff" : palette.muted,
+                      }}
+                    >
+                      {brand.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </ScrollView>
+
+          <View className="gap-1.5">
+            <TextInput
+              value={amount}
+              onChangeText={(text) => {
+                setAmount(text);
+                onChange({ ...draft, openingBalance: parseAmount(text) ?? 0 });
+              }}
+              keyboardType="decimal-pad"
+              placeholder="Starting balance"
+              placeholderTextColor={palette.muted}
+              className="rounded-xl border border-border bg-background px-3.5 py-3 font-ui text-[15px] text-foreground"
+            />
+            <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
+              What is in it right now. Everything you log from here moves it.
+            </Typography.Paragraph>
+          </View>
+
+          <View className="flex-row gap-2">
+            {existing && (
+              <Pressable
+                accessibilityRole="button"
+                onPress={onDelete}
+                className="min-h-[46px] justify-center rounded-full border border-border px-4 active:opacity-70"
+              >
+                <Text
+                  style={{ fontFamily: "Archivo_600SemiBold", fontSize: 14, color: palette.danger }}
+                >
+                  Delete
+                </Text>
+              </Pressable>
+            )}
+            <Pressable
+              accessibilityRole="button"
+              disabled={!existing}
+              onPress={onSave}
+              className="min-h-[46px] flex-1 items-center justify-center rounded-full active:opacity-80"
+              style={{ backgroundColor: palette.accent, opacity: existing ? 1 : 0.4 }}
+            >
+              <Text
+                style={{
+                  fontFamily: "Archivo_600SemiBold",
+                  fontSize: 14,
+                  color: palette.accentForeground,
+                }}
+              >
+                Save
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -461,6 +656,7 @@ function Budget(): JSX.Element {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [txns, setTxns] = useState<Txn[]>([]);
   const [draft, setDraft] = useState<Txn | null>(null);
+  const [wallet, setWallet] = useState<Account | null>(null);
   const [filter, setFilter] = useState<"all" | TxnKind>("all");
 
   const refresh = useCallback(() => {
@@ -478,6 +674,34 @@ function Budget(): JSX.Element {
     () => (filter === "all" ? txns : txns.filter((txn) => txn.kind === filter)),
     [txns, filter]
   );
+
+  const saveWallet = useCallback(() => {
+    if (!db || !wallet) return;
+    void saveAccount(db, wallet).then(() => {
+      setWallet(null);
+      refresh();
+    });
+  }, [db, wallet, refresh]);
+
+  const dropWallet = useCallback(() => {
+    if (!db || !wallet) return;
+    const target = wallet;
+    void countTxns(db, target.id).then((count) => {
+      // The sheet closes first: two stacked modals on Android leave the
+      // backdrop behind when the inner one goes.
+      setWallet(null);
+      confirm.ask({
+        title: `Delete ${target.name}?`,
+        message:
+          count > 0
+            ? `${count} transaction${count === 1 ? "" : "s"} recorded against it go too, or the totals would stop matching the list that is meant to explain them.`
+            : "Nothing has been recorded against it yet.",
+        action: "Delete",
+        destructive: true,
+        onConfirm: () => void deleteAccount(db, target.id).then(refresh),
+      });
+    });
+  }, [db, wallet, confirm, refresh]);
 
   /** How many of the last six months have anything in them. */
   const active = useMemo(
@@ -596,20 +820,61 @@ function Budget(): JSX.Element {
           </View>
         </View>
 
-        {/* Navigation, not content. Four tiles in a row rather than five
-            stacked full-width cards: these are doors, and a door does not need
-            a paragraph explaining it. Each keeps its own hue, so the colour
-            answers "where does this go" before the label has been read. */}
+        {/* The wallets themselves, not a door to them. They are the first thing
+            anyone wants from a money screen, and a horizontal run keeps any
+            number of them to one card's height instead of pushing the rest of
+            the dashboard off the screen. */}
+        <View className="gap-2">
+          <View className="flex-row items-center justify-between">
+            <Typography.Heading type="h3" className="font-ui-bold text-[14px]">
+              Wallets
+            </Typography.Heading>
+            {/* Count only. The total sits in the hero directly above, and for
+                anyone without a credit card it is the identical number. */}
+            {live.length > 0 && (
+              <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
+                {live.length} wallet{live.length === 1 ? "" : "s"}
+              </Typography.Paragraph>
+            )}
+          </View>
+
+          {/* Negative margin then inner padding, so cards can run to the screen
+              edge while the first one still lines up with everything above. */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="-mx-4">
+            <View className="flex-row gap-2.5 px-4">
+              {live.map((account) => (
+                <WalletCard
+                  key={account.id}
+                  account={account}
+                  balance={balanceOf(account, txns)}
+                  onPress={() => setWallet(account)}
+                />
+              ))}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Add a wallet"
+                onPress={() =>
+                  setWallet({ id: newNoteId(), name: "", type: "gcash", openingBalance: 0 })
+                }
+                className="h-[92px] w-[110px] items-center justify-center gap-1.5 rounded-[18px] border border-border border-dashed active:bg-surface-tertiary"
+              >
+                <Ionicons name="add" size={20} color={palette.muted} />
+                <Text
+                  style={{ fontFamily: "Archivo_500Medium", fontSize: 11, color: palette.muted }}
+                >
+                  {live.length === 0 ? "Add a wallet" : "Add"}
+                </Text>
+              </Pressable>
+            </View>
+          </ScrollView>
+        </View>
+
+        {/* Navigation, not content. Three tiles rather than stacked full-width
+            cards: these are doors, and a door does not need a paragraph
+            explaining it. Each keeps its own hue, so the colour answers "where
+            does this go" before the label has been read. */}
         <View className="flex-row gap-2.5">
           {[
-            {
-              key: "accounts",
-              icon: "wallet",
-              label: "Wallets",
-              tint: palette.wallets,
-              go: () => router.push("/budget/accounts"),
-              off: false,
-            },
             {
               key: "ask",
               icon: "chatbubble-ellipses",
@@ -736,6 +1001,16 @@ function Budget(): JSX.Element {
           onClose={() => setDraft(null)}
           onSave={commit}
           onDelete={remove}
+        />
+      )}
+      {wallet && (
+        <WalletEditor
+          key={wallet.id}
+          draft={wallet}
+          onChange={setWallet}
+          onClose={() => setWallet(null)}
+          onSave={saveWallet}
+          onDelete={dropWallet}
         />
       )}
       {confirm.dialog}
