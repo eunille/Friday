@@ -1,18 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
 import { Typography } from "heroui-native";
 import { useCallback, useMemo, useState, type JSX } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
-import { useConfirm } from "../../components/dialog";
-import { IconButton, PageHeader, SectionTitle } from "../../components/screen";
-import { CategoryPicker, Drawer, Field, SheetHead } from "../../components/money";
-import { DataGate, newNoteId, useAI } from "../../lib/ai";
+import { useConfirm } from "./dialog";
+import { IconButton, SectionTitle } from "./screen";
+import { CategoryPicker, Drawer, Field, SheetHead } from "./money";
+import { newNoteId, useAI } from "../lib/ai";
 import {
   categoryOf,
   budgetStatus,
   goalForecast,
-  monthKey,
   monthsEnding,
   parseAmount,
   peso,
@@ -23,18 +21,15 @@ import {
   type Category,
   type Goal,
   type Txn,
-} from "../../lib/budget";
+} from "../lib/budget";
 import {
   deleteBudget,
   deleteGoal,
-  listBudgets,
-  listGoals,
-  listTxns,
   saveBudget,
   saveGoal,
   type StoredBudget,
-} from "../../lib/ledger";
-import { usePalette } from "../../lib/theme";
+} from "../lib/ledger";
+import { usePalette } from "../lib/theme";
 
 function Bar({ share, band }: { share: number; band: BudgetBand }): JSX.Element {
   const palette = usePalette();
@@ -223,34 +218,37 @@ function GoalSheet({
   );
 }
 
-function Plan(): JSX.Element {
+/**
+ * Budgets and goals, as a panel rather than a page.
+ *
+ * It was its own screen; now it is the third tab of Money. The data comes in
+ * as props because the dashboard has already read it — two components reading
+ * the same tables would be two chances for them to disagree about a balance.
+ */
+export function PlanPanel({
+  txns,
+  goals,
+  budgets,
+  month,
+  onChanged,
+}: {
+  txns: readonly Txn[];
+  goals: readonly Goal[];
+  budgets: readonly StoredBudget[];
+  month: string;
+  /** Tell the dashboard to re-read after a write. */
+  onChanged: () => void;
+}): JSX.Element {
   const { db } = useAI();
-  const router = useRouter();
   const palette = usePalette();
   const confirm = useConfirm();
 
-  const month = monthKey(new Date().toISOString());
-  const [txns, setTxns] = useState<Txn[]>([]);
-  const [budgets, setBudgets] = useState<StoredBudget[]>([]);
-  const [goals, setGoals] = useState<Goal[]>([]);
   const [editing, setEditing] = useState<Category | null>(null);
   const [goalDraft, setGoalDraft] = useState<Goal | null>(null);
   const [pickingBudget, setPickingBudget] = useState(false);
 
-  const refresh = useCallback(() => {
-    if (!db) return;
-    void listTxns(db).then(setTxns);
-    void listBudgets(db, month).then(setBudgets);
-    void listGoals(db).then(setGoals);
-  }, [db, month]);
+  const refresh = onChanged;
 
-  // On focus, not just on mount. Pushed screens stay mounted underneath, so a
-  // balance read once at mount still showed the old number after logging
-  // something in Ask and coming back — the screen had never been told to look
-  // again.
-  useFocusEffect(refresh);
-
-  // Worst first: the one about to be blown is the reason to open this screen.
   const statuses = useMemo(
     () =>
       budgets
@@ -339,10 +337,7 @@ function Plan(): JSX.Element {
   }, [db, goalDraft, confirm, refresh]);
 
   return (
-    <View className="flex-1 bg-background">
-      <PageHeader title="Plan" onBack={() => router.back()} />
-
-      <ScrollView contentContainerClassName="px-4 pt-4 pb-10 gap-5">
+    <View className="gap-5">
         <View className="gap-3 rounded-[22px] p-4" style={{ backgroundColor: palette.ink }}>
           <View>
             <Text
@@ -499,8 +494,6 @@ function Plan(): JSX.Element {
             })
           )}
         </View>
-      </ScrollView>
-
       {editing && (
         <AmountSheet
           key={editing}
@@ -534,13 +527,5 @@ function Plan(): JSX.Element {
       )}
       {confirm.dialog}
     </View>
-  );
-}
-
-export default function PlanScreen(): JSX.Element {
-  return (
-    <DataGate>
-      <Plan />
-    </DataGate>
   );
 }

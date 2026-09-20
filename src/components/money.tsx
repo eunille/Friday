@@ -329,6 +329,31 @@ export function Chip({
   );
 }
 
+/**
+ * The money assistant's own face: the same creature as the chef, in a
+ * deerstalker with a magnifying glass.
+ *
+ * A separate avatar rather than reusing Mascot, because this one does a
+ * different job. The chef answers questions about your notes; this one goes
+ * through your spending. Same character, so the app still feels like one app.
+ */
+export function Detective({ size = 30 }: { size?: number }): JSX.Element {
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      className="items-center justify-center overflow-hidden rounded-full"
+      style={{ width: size, height: size, backgroundColor: "#16181D" }}
+    >
+      <Image
+        source={require("../../assets/images/detective-avatar.png")}
+        style={{ width: size, height: size }}
+        resizeMode="contain"
+      />
+    </View>
+  );
+}
+
 /* ---------------------------------------------------------------- wallets --- */
 
 /**
@@ -342,10 +367,13 @@ export function WalletCard({
   account,
   balance,
   onPress,
+  grow = false,
 }: {
   account: Account;
   balance: number;
   onPress: () => void;
+  /** Share the row instead of taking a fixed width, for the two-column grid. */
+  grow?: boolean;
 }): JSX.Element {
   const brand = ACCOUNT_TYPES[account.type];
 
@@ -354,7 +382,9 @@ export function WalletCard({
       accessibilityRole="button"
       accessibilityLabel={`${account.name}, ${brand.label}, ${peso(balance)}`}
       onPress={onPress}
-      className="h-[104px] w-[158px] justify-between overflow-hidden rounded-[20px] p-3 active:opacity-90"
+      className={`h-[104px] justify-between overflow-hidden rounded-[20px] p-3 active:opacity-90 ${
+        grow ? "flex-1" : "w-[158px]"
+      }`}
       style={{
         // Under the gradient, not instead of it: if the SVG ever fails to draw
         // there is still a brand-coloured card rather than a transparent hole.

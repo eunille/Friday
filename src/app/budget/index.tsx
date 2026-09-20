@@ -10,12 +10,14 @@ import {
   ActionSheet,
   BrandSurface,
   Chip,
+  Detective,
   TxnEditor,
   TxnRow,
   WalletCard,
   WalletEditor,
   type Action,
 } from "../../components/money";
+import { PlanPanel } from "../../components/plan-panel";
 import { RepeatEditor, RepeatsSheet } from "../../components/repeats";
 import { IconButton, PageHeader } from "../../components/screen";
 import { DataGate, newNoteId, useAI } from "../../lib/ai";
@@ -30,6 +32,7 @@ import {
   netWorth,
   peso,
   totalsFor,
+  ACCOUNT_TYPES,
   type Account,
   type Goal,
   type Recurring,
@@ -53,6 +56,21 @@ import {
   type StoredBudget,
 } from "../../lib/ledger";
 import { usePalette } from "../../lib/theme";
+
+/**
+ * The three things a money screen is for: what you have, what happened, what
+ * you intend. They swap in place rather than navigating, so folding a page in
+ * costs a tab rather than another screenful of scrolling.
+ */
+type Tab = "wallets" | "activity" | "plan";
+
+const TABS: { key: Tab; label: string }[] = [
+  { key: "wallets", label: "Wallets" },
+  { key: "activity", label: "Activity" },
+  { key: "plan", label: "Plan" },
+];
+
+const ALL_GROUPS = "All";
 
 const FILTERS: { key: "all" | TxnKind; label: string }[] = [
   { key: "all", label: "All" },
@@ -189,6 +207,8 @@ function Budget(): JSX.Element {
   const [wallet, setWallet] = useState<Account | null>(null);
   const [adding, setAdding] = useState(false);
   const [filter, setFilter] = useState<"all" | TxnKind>("all");
+  const [tab, setTab] = useState<Tab>("wallets");
+  const [group, setGroup] = useState<string>(ALL_GROUPS);
   const [rules, setRules] = useState<Recurring[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [budgets, setBudgets] = useState<StoredBudget[]>([]);
@@ -238,6 +258,33 @@ function Budget(): JSX.Element {
   }, [live, txns]);
 
   const worth = useMemo(() => netWorth(live, txns), [live, txns]);
+
+  /**
+   * Wallets in bands, each with its own subtotal.
+   *
+   * Grouped by ACCOUNT_TYPES rather than by a field of its own, so adding a
+   * bank puts it under Banks without anyone having to remember to file it.
+   * Empty bands are dropped: a heading over nothing is a heading that makes
+   * you wonder what you deleted.
+   */
+  const bands = useMemo(() => {
+    const order = [...new Set(Object.values(ACCOUNT_TYPES).map((type) => type.group))];
+    return order
+      .map((name) => {
+        const wallets = live.filter((account) => ACCOUNT_TYPES[account.type].group === name);
+        return {
+          name,
+          wallets,
+          total: wallets.reduce((sum, account) => sum + balanceOf(account, txns), 0),
+        };
+      })
+      .filter((band) => band.wallets.length > 0);
+  }, [live, txns]);
+
+  const shownBands = useMemo(
+    () => (group === ALL_GROUPS ? bands : bands.filter((band) => band.name === group)),
+    [bands, group]
+  );
 
   /** What repeats costs per month, and how much of it is waiting to be filed. */
   const repeat = useMemo(() => monthlyRepeat(rules), [rules]);
@@ -414,7 +461,7 @@ function Budget(): JSX.Element {
             label: "Budget or goal",
             hint: "A monthly limit or a savings goal",
             tint: palette.plan,
-            onPress: () => router.push("/budget/plan"),
+            onPress: () => setTab("plan"),
           },
           {
             key: "bills",
@@ -445,7 +492,11 @@ function Budget(): JSX.Element {
           style={{ backgroundColor: palette.money }}
         >
           <BrandSurface colour={palette.money} radius={22} />
-          <View>
+          <View className="flex-row items-center gap-3">
+            {/* The one place in Money with a face. It is also the fastest way
+                to tell this screen from every other balance in the app. */}
+            <Detective size={44} />
+            <View className="flex-1">
             <Text
               style={{
                 color: palette.moneyForeground,
@@ -466,6 +517,7 @@ function Budget(): JSX.Element {
             >
               {peso(worth)}
             </Text>
+            </View>
           </View>
           <View className="flex-row flex-wrap gap-x-5 gap-y-1">
             {/* Only worth spelling out when a card makes them differ from the
@@ -547,7 +599,7 @@ function Budget(): JSX.Element {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`Budgets and goals, ${plan.value} ${plan.note}`}
-            onPress={() => router.push("/budget/plan")}
+            onPress={() => setTab("plan")}
             className="flex-1 gap-1.5 rounded-2xl border border-border bg-surface p-3.5 active:bg-surface-tertiary"
           >
             <View
@@ -572,55 +624,185 @@ function Budget(): JSX.Element {
           </Pressable>
         </View>
 
-        {/* The wallets themselves, not a door to them. They are the first thing
-            anyone wants from a money screen, and a horizontal run keeps any
-            number of them to one card's height instead of pushing the rest of
-            the dashboard off the screen. */}
-        <View className="gap-2">
-          <View className="flex-row items-center justify-between">
-            <Typography.Heading type="h3" className="font-ui-bold text-[14px]">
-              Wallets
-            </Typography.Heading>
-            {live.length > 0 && (
-              <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
-                {live.length} wallet{live.length === 1 ? "" : "s"}
-              </Typography.Paragraph>
-            )}
-          </View>
-
-          {/* Negative margin then inner padding, so cards can run to the screen
-              edge while the first one still lines up with everything above. */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="-mx-4">
-            <View className="flex-row gap-2.5 px-4">
-              {live.map((account) => (
-                <WalletCard
-                  key={account.id}
-                  account={account}
-                  balance={balanceOf(account, txns)}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/budget/wallet/[id]",
-                      params: { id: account.id },
-                    })
-                  }
-                />
-              ))}
+        {/* A segmented control, not navigation. Everything below swaps; the
+            balance, the two figures and the header stay put, so you never lose
+            your place to look at something else on the same screen. */}
+        <View className="flex-row gap-1 rounded-full border border-border bg-surface p-1">
+          {TABS.map((option) => {
+            const on = tab === option.key;
+            return (
               <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Add a wallet"
-                onPress={startWallet}
-                className="h-[98px] w-[110px] items-center justify-center gap-1.5 rounded-[18px] border border-border border-dashed active:bg-surface-tertiary"
+                key={option.key}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: on }}
+                onPress={() => setTab(option.key)}
+                className="min-h-[36px] flex-1 items-center justify-center rounded-full"
+                style={{ backgroundColor: on ? palette.accent : "transparent" }}
               >
-                <Ionicons name="add" size={20} color={palette.muted} />
                 <Text
-                  style={{ fontFamily: "Archivo_500Medium", fontSize: 11, color: palette.muted }}
+                  style={{
+                    fontFamily: "Archivo_600SemiBold",
+                    fontSize: 12.5,
+                    color: on ? palette.accentForeground : palette.muted,
+                  }}
                 >
-                  {live.length === 0 ? "Add a wallet" : "Add"}
+                  {option.label}
                 </Text>
               </Pressable>
-            </View>
-          </ScrollView>
+            );
+          })}
         </View>
+
+        {tab === "wallets" && (
+          <>
+            {/* Which band to show, in place. With four bands and nine kinds a
+                filter earns its row; with one band it would be a control that
+                can only ever do nothing, so it waits. */}
+            {bands.length > 1 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} className="-mx-4">
+                <View className="flex-row gap-2 px-4">
+                  {[ALL_GROUPS, ...bands.map((band) => band.name)].map((name) => (
+                    <Chip
+                      key={name}
+                      label={name}
+                      on={group === name}
+                      onPress={() => setGroup(name)}
+                    />
+                  ))}
+                </View>
+              </ScrollView>
+            )}
+
+            {live.length === 0 ? (
+              <Typography.Paragraph className="pt-2 text-center font-read text-muted text-[15px] leading-6">
+                No wallets yet — every transaction has to come out of somewhere.
+              </Typography.Paragraph>
+            ) : (
+              shownBands.map((band) => (
+                <View key={band.name} className="gap-2">
+                  <View className="flex-row items-center justify-between">
+                    <Typography.Heading type="h3" className="font-ui-bold text-[14px]">
+                      {band.name}
+                    </Typography.Heading>
+                    <Typography.Paragraph className="font-ui-medium text-muted text-[12px]">
+                      {peso(band.total)}
+                    </Typography.Paragraph>
+                  </View>
+                  {/* Two to a row, padded with a spacer so an odd one out stays
+                      half-width instead of stretching across. */}
+                  {Array.from({ length: Math.ceil(band.wallets.length / 2) }, (_, row) => (
+                    <View key={row} className="flex-row gap-2.5">
+                      {band.wallets.slice(row * 2, row * 2 + 2).map((account) => (
+                        <WalletCard
+                          key={account.id}
+                          account={account}
+                          balance={balanceOf(account, txns)}
+                          grow
+                          onPress={() =>
+                            router.push({
+                              pathname: "/budget/wallet/[id]",
+                              params: { id: account.id },
+                            })
+                          }
+                        />
+                      ))}
+                      {band.wallets.slice(row * 2, row * 2 + 2).length === 1 && (
+                        <View className="flex-1" />
+                      )}
+                    </View>
+                  ))}
+                </View>
+              ))
+            )}
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Add a wallet"
+              onPress={startWallet}
+              className="min-h-[48px] flex-row items-center justify-center gap-2 rounded-2xl border border-border border-dashed active:bg-surface-tertiary"
+            >
+              <Ionicons name="add" size={18} color={palette.muted} />
+              <Text style={{ fontFamily: "Archivo_500Medium", fontSize: 13, color: palette.muted }}>
+                Add a wallet
+              </Text>
+            </Pressable>
+          </>
+        )}
+
+        {tab === "activity" && (
+          <>
+            {/* The shape of the month, in place rather than one tap away. */}
+            {txns.length > 0 && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Open full charts"
+                onPress={() => router.push("/budget/charts")}
+                className="gap-3 rounded-2xl border border-border bg-surface p-3.5 active:opacity-80"
+              >
+                <View className="flex-row items-center justify-between">
+                  {/* Names what is actually drawn. The bars wait for a second
+                      month, so a fixed "Six months" would be a heading over
+                      something else. */}
+                  <Typography.Paragraph className="font-ui-bold text-[14px]">
+                    {active >= 2 ? "Six months" : "Where it went"}
+                  </Typography.Paragraph>
+                  <View className="flex-row items-center gap-1">
+                    <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
+                      All charts
+                    </Typography.Paragraph>
+                    <Ionicons name="chevron-forward" size={13} color={palette.muted} />
+                  </View>
+                </View>
+                {/* A run of six bars where five are empty reads as a broken
+                    chart rather than a new ledger, so it waits until there is a
+                    shape to show. The split below works from one month. */}
+                {active >= 2 && <SixMonths txns={txns} month={month} />}
+                <Split txns={txns} month={month} />
+              </Pressable>
+            )}
+
+            <View className="flex-row gap-2">
+              {FILTERS.map((option) => (
+                <Chip
+                  key={option.key}
+                  label={option.label}
+                  on={filter === option.key}
+                  onPress={() => setFilter(option.key)}
+                />
+              ))}
+            </View>
+
+            {shown.length === 0 ? (
+              <Typography.Paragraph className="pt-4 text-center font-read text-muted text-[15px] leading-6">
+                {live.length === 0
+                  ? "Add a wallet first — every transaction has to come out of somewhere."
+                  : "Nothing logged yet. Open Budget and say what you spent — “250 lunch gcash” is enough."}
+              </Typography.Paragraph>
+            ) : (
+              <View className="overflow-hidden rounded-2xl border border-border bg-surface">
+                {shown.map((txn, index) => (
+                  <TxnRow
+                    key={txn.id}
+                    txn={txn}
+                    accounts={accounts}
+                    first={index === 0}
+                    onPress={() => setDraft(txn)}
+                  />
+                ))}
+              </View>
+            )}
+          </>
+        )}
+
+        {tab === "plan" && (
+          <PlanPanel
+            txns={txns}
+            goals={goals}
+            budgets={budgets}
+            month={month}
+            onChanged={refresh}
+          />
+        )}
 
         {/* One door, not a row of them. Repeats and Plan became the two cards
             above, and a lone tile padded out to a third of the width reads as
@@ -648,75 +830,6 @@ function Budget(): JSX.Element {
           <Ionicons name="chevron-forward" size={15} color={palette.muted} />
         </Pressable>
 
-        {/* The dashboard, in place rather than one tap away. The shape of the
-            month is the reason to open this screen, so it should not be hiding
-            behind a row labelled Charts. */}
-        {txns.length > 0 && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open full charts"
-            onPress={() => router.push("/budget/charts")}
-            className="gap-3 rounded-2xl border border-border bg-surface p-3.5 active:opacity-80"
-          >
-            <View className="flex-row items-center justify-between">
-              {/* Names what is actually drawn. The bars wait for a second
-                  month, so a fixed "Six months" would be a heading over
-                  something else. */}
-              <Typography.Paragraph className="font-ui-bold text-[14px]">
-                {active >= 2 ? "Six months" : "Where it went"}
-              </Typography.Paragraph>
-              <View className="flex-row items-center gap-1">
-                <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
-                  All charts
-                </Typography.Paragraph>
-                <Ionicons name="chevron-forward" size={13} color={palette.muted} />
-              </View>
-            </View>
-            {/* A run of six bars where five are empty reads as a broken chart
-                rather than a new ledger, so it waits until there is a shape to
-                show. The split below works from one month. */}
-            {active >= 2 && <SixMonths txns={txns} month={month} />}
-            <Split txns={txns} month={month} />
-          </Pressable>
-        )}
-
-        {live.length === 0 ? (
-          <Typography.Paragraph className="pt-4 text-center font-read text-muted text-[15px] leading-6">
-            Add a wallet first — every transaction has to come out of somewhere.
-          </Typography.Paragraph>
-        ) : (
-          <>
-            <View className="flex-row gap-2">
-              {FILTERS.map((option) => (
-                <Chip
-                  key={option.key}
-                  label={option.label}
-                  on={filter === option.key}
-                  onPress={() => setFilter(option.key)}
-                />
-              ))}
-            </View>
-
-            {shown.length === 0 ? (
-              <Typography.Paragraph className="pt-4 text-center font-read text-muted text-[15px] leading-6">
-                Nothing logged yet. Open Budget and say what you spent — &ldquo;250 lunch gcash&rdquo;
-                is enough.
-              </Typography.Paragraph>
-            ) : (
-              <View className="overflow-hidden rounded-2xl border border-border bg-surface">
-                {shown.map((txn, index) => (
-                  <TxnRow
-                    key={txn.id}
-                    txn={txn}
-                    accounts={accounts}
-                    first={index === 0}
-                    onPress={() => setDraft(txn)}
-                  />
-                ))}
-              </View>
-            )}
-          </>
-        )}
       </ScrollView>
 
       {adding && <ActionSheet actions={actions} onClose={() => setAdding(false)} />}
