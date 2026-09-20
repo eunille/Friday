@@ -21,7 +21,6 @@ import Svg, {
   Stop,
 } from "react-native-svg";
 
-
 import {
   ACCOUNT_TYPES,
   CATEGORIES,

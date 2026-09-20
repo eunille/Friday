@@ -21,7 +21,7 @@ import {
   type Txn,
 } from "../../lib/budget";
 import { listAccounts, listTxns, saveTxn } from "../../lib/ledger";
-import { parseMessage, summarise, type Draft } from "../../lib/moneytalk";
+import { GUESS_LABELS, parseMessage, summarise, type Draft } from "../../lib/moneytalk";
 import { useKeyboardOverlap, usePalette } from "../../lib/theme";
 
 /**
@@ -160,7 +160,9 @@ function DraftRow({
             read, which is the failure mode worth designing against. */}
         {draft.guessed.length > 0 && (
           <Text style={{ fontFamily: "Archivo_500Medium", fontSize: 9.5, color: palette.warning }}>
-            assumed {draft.guessed.join(", ")}
+            {/* Named in the user's terms, not the type's. "assumed kind" was
+                the field name leaking out of the parser. */}
+            guessed {draft.guessed.map((field) => GUESS_LABELS[field]).join(", ")}
           </Text>
         )}
       </View>
@@ -255,7 +257,13 @@ function Ask(): JSX.Element {
               Nothing is saved until you say so.
             </Typography.Paragraph>
             <View className="gap-1.5 self-stretch rounded-2xl border border-border bg-surface p-3.5">
-              {["Starbucks 250 from GCash", "sahod 32000 to BPI", "what did I spend most on?"].map(
+              {[
+                "gym 250 from savings",
+                "spent 1500 using my gcash yesterday",
+                "added 1500 to my emergency fund",
+                "sent 2000 to bills from everyday",
+                "what did I spend most on?",
+              ].map(
                 (example) => (
                   <Pressable
                     key={example}
@@ -388,7 +396,7 @@ function Ask(): JSX.Element {
             value={input}
             onChangeText={setInput}
             multiline
-            placeholder={live.length === 0 ? "Add a wallet first" : "Spent 250 on food from GCash…"}
+            placeholder={live.length === 0 ? "Add a wallet first" : "Lunch 250 from GCash…"}
             placeholderTextColor={palette.muted}
             editable={live.length > 0}
             className="max-h-28 flex-1 rounded-2xl border border-border bg-background px-3.5 py-2.5 font-ui text-[14.5px] text-foreground"
