@@ -11,7 +11,6 @@ import {
   ActionSheet,
   BrandSurface,
   Chip,
-  Detective,
   TxnEditor,
   TxnRow,
   WalletCard,
@@ -20,7 +19,7 @@ import {
 } from "../../components/money";
 import { PlanPanel } from "../../components/plan-panel";
 import { RepeatEditor, RepeatsSheet } from "../../components/repeats";
-import { PageHeader } from "../../components/screen";
+import { Mascot, PageHeader } from "../../components/screen";
 import { DataGate, newNoteId, useAI } from "../../lib/ai";
 import {
   categoryOf,
@@ -503,7 +502,7 @@ function Budget(): JSX.Element {
           <View className="flex-row items-center gap-3">
             {/* The one place in Money with a face. It is also the fastest way
                 to tell this screen from every other balance in the app. */}
-            <Detective size={44} />
+            <Mascot pose="money" size={54} />
             <View className="flex-1">
             <View className="flex-row items-center gap-2">
               <Text

@@ -547,7 +547,7 @@ export default function Scan(): JSX.Element {
 
             <View className="gap-2.5 rounded-[20px] border border-border bg-surface p-4">
               <View className="flex-row items-center gap-2">
-                <Mascot size={26} />
+                <Mascot pose="glasses" size={34} />
                 <Typography.Paragraph className="flex-1 font-ui-bold text-[12.5px]">
                   In plain words
                 </Typography.Paragraph>

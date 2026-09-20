@@ -329,31 +329,6 @@ export function Chip({
   );
 }
 
-/**
- * The money assistant's own face: the same creature as the chef, in a
- * deerstalker with a magnifying glass.
- *
- * A separate avatar rather than reusing Mascot, because this one does a
- * different job. The chef answers questions about your notes; this one goes
- * through your spending. Same character, so the app still feels like one app.
- */
-export function Detective({ size = 30 }: { size?: number }): JSX.Element {
-  return (
-    <View
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      className="items-center justify-center overflow-hidden rounded-full"
-      style={{ width: size, height: size, backgroundColor: "#16181D" }}
-    >
-      <Image
-        source={require("../../assets/images/detective-avatar.png")}
-        style={{ width: size, height: size }}
-        resizeMode="contain"
-      />
-    </View>
-  );
-}
-
 /* ---------------------------------------------------------------- wallets --- */
 
 /**

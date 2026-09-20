@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Typography } from "heroui-native";
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
-import { FlatList, Image, Pressable, View } from "react-native";
+import { FlatList, Pressable, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -128,7 +128,7 @@ function Turn({
 
   return (
     <View className="my-2.5 flex-row gap-2.5">
-      <Mascot size={30} />
+      <Mascot pose="stretch" size={38} />
       <View className="flex-1 rounded-[18px] rounded-bl-md border border-border bg-surface px-3.5 py-3">
         <Typography.Paragraph className="font-read text-[14.5px] leading-[23px]">
           {entry.content}
@@ -389,7 +389,7 @@ function Chat(): JSX.Element {
         renderItem={({ item, index }) =>
           item.role === "assistant" && item.content === "" ? (
             <View className="my-2.5 flex-row gap-2.5">
-              <Mascot size={30} />
+              <Mascot pose="stretch" size={38} />
               <Thinking />
             </View>
           ) : (
@@ -416,11 +416,7 @@ function Chat(): JSX.Element {
         ListEmptyComponent={
           <View className="gap-4 pt-4">
             <View className="items-center justify-center py-6">
-              <Image
-                source={require("../../../assets/images/splash-icon.png")}
-                style={{ width: 120, height: 120 }}
-                resizeMode="contain"
-              />
+              <Mascot pose="stretch" size={150} />
             </View>
 
             <View className="gap-2">

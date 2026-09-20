@@ -113,16 +113,20 @@ export function ScreenHeader({
   title,
   children,
   action,
+  pose,
 }: {
   title: string;
   children?: ReactNode;
   action?: ReactNode;
+  /** Draws the mascot beside the title, doing whatever this screen is for. */
+  pose?: Pose;
 }): JSX.Element {
   const { tier } = useAI();
 
   return (
     <View className="gap-2 pb-1">
-      <View className="flex-row items-center justify-between gap-3">
+      <View className="flex-row items-center justify-between gap-2">
+        {pose && <Mascot pose={pose} size={48} />}
         <Typography.Heading type="h1" className="flex-1 font-ui-bold text-[30px] tracking-tight">
           {title}
         </Typography.Heading>
@@ -302,28 +306,42 @@ export function OnDeviceChip({ label }: { label: string }): JSX.Element {
   );
 }
 
+/** The poses on `faces-sheet.png`, in the order they sit on the strip. */
+const POSES = ["hero", "stretch", "reading", "glasses", "money"] as const;
+export type Pose = (typeof POSES)[number];
+
+const FACES = require("../../assets/images/sprites/faces-sheet.png");
+
 /**
  * The mascot, as he appears beside anything he said.
  *
- * A head-and-shoulders crop of the launcher artwork rather than the whole
- * drawing: at 26pt the full sprite is mostly frying pan, and the face — which
- * is the part that has to be recognisable here — would be four pixels across.
+ * One pose per screen, so the badge says what the screen is for before you
+ * read the heading: reading on Notes, glasses on Scan, a coin on Money. Whole
+ * sprites rather than the head crop the old chef needed — cropping to the face
+ * would make every pose the same owl, which defeats having poses at all.
  *
- * The badge keeps the icon's dark ground in both themes on purpose. The chef's
- * hat is near-white, so on a light surface the top half of him disappears.
+ * One sheet behind a window, like the loaders, so five poses cost one decode.
+ * Nothing centres the window: the strip is five cells wide and is placed by the
+ * transform, which `justifyContent` would fight.
+ *
+ * He sits on the page with no disc behind him. That does cost contrast in the
+ * light theme, where a near-white owl meets a near-white surface — the tan
+ * outline and the orange tufts are what carry him there.
  */
-export function Mascot({ size = 46 }: { size?: number }): JSX.Element {
+export function Mascot({ pose = "hero", size = 58 }: { pose?: Pose; size?: number }): JSX.Element {
   return (
     <View
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
-      className="items-center justify-center overflow-hidden rounded-full"
-      style={{ width: size, height: size, backgroundColor: "#16181D" }}
+      style={{ width: size, height: size, overflow: "hidden" }}
     >
       <Image
-        source={require("../../assets/images/mascot-avatar.png")}
-        style={{ width: size, height: size }}
-        resizeMode="contain"
+        source={FACES}
+        style={{
+          width: size * POSES.length,
+          height: size,
+          transform: [{ translateX: -POSES.indexOf(pose) * size }],
+        }}
       />
     </View>
   );

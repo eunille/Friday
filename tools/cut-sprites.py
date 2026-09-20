@@ -48,6 +48,20 @@ COOK = [(28, 125), (141, 246), (253, 341), (347, 433), (470, 561)]
 WORK = [(812, 912), (922, 1016)]
 LOOP_SCALE = 4  # after halving: a net 2x, so a 110dp box is not a 3x upscale
 
+# One pose per screen, so the badge in a header says what that screen is for.
+# Same gutter rule as the loops: nothing touches a cell edge, or it shows up
+# down the side of its neighbour when the window lands on a fractional pixel.
+# Whole sprites rather than head crops: cropping to the face would make every
+# pose the same owl, which is the one thing this is not for.
+FACE = 112
+POSES = {
+    "hero": (695, 900, 775, 982),
+    "stretch": (918, 722, 1020, 828),
+    "reading": (556, 900, 625, 982),
+    "glasses": (632, 900, 695, 982),
+    "money": (26, 507, 128, 639),
+}
+
 ICON = 1024
 BODY = 9  # upscale for icon.png: 86 art pixels -> 774, about 76% of the icon
 SAFE = 7  # adaptive-icon.png: Android masks to the middle 66%, so 602 fits
@@ -140,6 +154,24 @@ def place(owl: Image.Image, factor: int, size: int, ground: tuple[int, int, int,
     return canvas
 
 
+def faces() -> Image.Image:
+    """Every avatar pose, on one strip, centred in square cells."""
+    strip = Image.new("RGBA", (FACE * len(POSES), FACE), (0, 0, 0, 0))
+    for column, box in enumerate(POSES.values()):
+        cell = keyed(box)
+        cell = cell.crop(cell.getbbox())
+        # To one height, not one bounding box: the atlas draws these at
+        # different scales, and a badge that changes size between screens reads
+        # as a mistake rather than a different pose.
+        scale = min((FACE - GUTTER * 3) / cell.size[1], (FACE - GUTTER * 3) / cell.size[0])
+        cell = cell.resize((round(cell.size[0] * scale), round(cell.size[1] * scale)), Image.BOX)
+        strip.alpha_composite(
+            cell,
+            (column * FACE + (FACE - cell.size[0]) // 2, (FACE - cell.size[1]) // 2),
+        )
+    return strip.resize((strip.size[0] * 2, strip.size[1] * 2), Image.NEAREST)
+
+
 def main() -> None:
     owl = cut()
     print(f"idle owl: {owl.size[0]}x{owl.size[1]} art pixels")
@@ -157,6 +189,10 @@ def main() -> None:
         strip = sheet(frames, centred)
         strip.save(f"assets/images/sprites/{name}-sheet.png", optimize=True)
         print(f"{name}-sheet: {strip.size[0]}x{strip.size[1]}, {len(frames)} frames")
+
+    poses = faces()
+    poses.save("assets/images/sprites/faces-sheet.png", optimize=True)
+    print(f"faces-sheet: {poses.size[0]}x{poses.size[1]}, {', '.join(POSES)}")
 
 
 if __name__ == "__main__":

@@ -24,7 +24,7 @@ function Notes(): JSX.Element {
   return (
     <View className="flex-1 bg-background">
       <Screen>
-        <ScreenHeader title="Notes">
+        <ScreenHeader title="Notes" pose="reading">
           Everything you write is searchable and answerable on the phone. Nothing is uploaded.
         </ScreenHeader>
 
