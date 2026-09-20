@@ -307,7 +307,16 @@ export function OnDeviceChip({ label }: { label: string }): JSX.Element {
 }
 
 /** The poses on `faces-sheet.png`, in the order they sit on the strip. */
-const POSES = ["hero", "stretch", "reading", "glasses", "money"] as const;
+const POSES = [
+  "hero",
+  "stretch",
+  "reading",
+  "glasses",
+  "earn",
+  "savings",
+  "rich",
+  "happy",
+] as const;
 export type Pose = (typeof POSES)[number];
 
 const FACES = require("../../assets/images/sprites/faces-sheet.png");
@@ -327,6 +336,10 @@ const FACES = require("../../assets/images/sprites/faces-sheet.png");
  * He sits on the page with no disc behind him. That does cost contrast in the
  * light theme, where a near-white owl meets a near-white surface — the tan
  * outline and the orange tufts are what carry him there.
+ *
+ * No particle on the corner. The atlas's sparkles are almost entirely
+ * antialiased edge, so lifting them off the painted checkerboard leaves a pale
+ * halo that shows as a white box at any size worth drawing them.
  */
 export function Mascot({ pose = "hero", size = 58 }: { pose?: Pose; size?: number }): JSX.Element {
   return (

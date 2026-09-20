@@ -11,6 +11,7 @@ import {
   ActionSheet,
   BrandSurface,
   Chip,
+  MoneyIcon,
   TxnEditor,
   TxnRow,
   WalletCard,
@@ -502,7 +503,7 @@ function Budget(): JSX.Element {
           <View className="flex-row items-center gap-3">
             {/* The one place in Money with a face. It is also the fastest way
                 to tell this screen from every other balance in the app. */}
-            <Mascot pose="money" size={54} />
+            <Mascot pose="rich" size={54} />
             <View className="flex-1">
             <View className="flex-row items-center gap-2">
               <Text
@@ -595,12 +596,7 @@ function Budget(): JSX.Element {
             className="flex-1 gap-1.5 rounded-2xl border border-border bg-surface p-3.5 active:bg-surface-tertiary"
           >
             <View className="flex-row items-center gap-1.5">
-              <View
-                className="h-7 w-7 items-center justify-center rounded-lg"
-                style={{ backgroundColor: `${palette.warning}22` }}
-              >
-                <Ionicons name="repeat" size={15} color={palette.warning} />
-              </View>
+              <MoneyIcon name="coins" size={28} />
               {/* The badge earns its place: it is the only thing here that is
                   asking to be acted on. */}
               {dueNow > 0 && (
@@ -637,12 +633,7 @@ function Budget(): JSX.Element {
             onPress={() => setTab("plan")}
             className="flex-1 gap-1.5 rounded-2xl border border-border bg-surface p-3.5 active:bg-surface-tertiary"
           >
-            <View
-              className="h-7 w-7 items-center justify-center rounded-lg"
-              style={{ backgroundColor: `${palette.plan}22` }}
-            >
-              <Ionicons name="flag" size={15} color={palette.plan} />
-            </View>
+            <MoneyIcon name="chart" size={28} />
             <Text
               style={{
                 color: plan.alarm ? palette.danger : palette.foreground,

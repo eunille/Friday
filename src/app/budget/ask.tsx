@@ -228,7 +228,7 @@ function BudgetChat(): JSX.Element {
       >
         {turns.length === 0 && (
           <View className="items-center gap-3 pt-6">
-            <Mascot pose="money" size={68} />
+            <Mascot pose="earn" size={68} />
             <Typography.Paragraph className="text-center font-read text-muted text-[14.5px] leading-[23px]">
               Type what you spent and it goes in the ledger. Several at once is fine, one per line.
               Nothing is saved until you say so.
@@ -275,7 +275,7 @@ function BudgetChat(): JSX.Element {
           if (turn.role === "bot") {
             return (
               <View key={index} className="flex-row gap-2.5">
-                <Mascot pose="money" size={38} />
+                <Mascot pose="savings" size={38} />
                 <View className="flex-1 rounded-[18px] rounded-bl-md border border-border bg-surface px-3.5 py-3">
                   <Typography.Paragraph className="font-read text-[14.5px] leading-[23px]">
                     {turn.text}
@@ -287,7 +287,7 @@ function BudgetChat(): JSX.Element {
 
           return (
             <View key={index} className="flex-row gap-2.5">
-              <Mascot pose="money" size={38} />
+              <Mascot pose="savings" size={38} />
               <View className="flex-1 gap-2.5 rounded-[18px] rounded-bl-md border border-border bg-surface p-3">
                 <View className="flex-row items-center gap-1.5 self-start rounded-full bg-on-device-soft px-2.5 py-1">
                   <Ionicons
