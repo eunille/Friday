@@ -11,6 +11,16 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Svg, {
+  Circle,
+  Defs,
+  Ellipse,
+  LinearGradient,
+  RadialGradient,
+  Rect,
+  Stop,
+} from "react-native-svg";
+
 
 import {
   ACCOUNT_TYPES,
@@ -27,8 +37,6 @@ import {
   type Txn,
   type TxnKind,
 } from "../lib/budget";
-import Svg, { Defs, Ellipse, LinearGradient, Rect, Stop } from "react-native-svg";
-
 import { relativeDate } from "../lib/formats";
 import { usePalette } from "../lib/theme";
 import { IconButton } from "./screen";
@@ -77,37 +85,74 @@ function shift(hex: string, ratio: number): string {
 }
 
 /**
- * The face of a brand-coloured card: a diagonal wash plus one specular sweep.
+ * The face of a coloured card: a diagonal wash, two soft blobs, a hairline ring
+ * and one specular sweep.
  *
- * Flat fills are what made these look stale — a real card catches light, so the
- * colour runs lighter at the top-left and deeper at the bottom-right with a
- * soft highlight across the top corner. Drawn with react-native-svg, which is
- * already here for the charts, rather than adding a gradient dependency.
+ * Flat fills are what made these look stale. A real card catches light, so the
+ * colour runs lighter at the top-left and deeper at the bottom-right, with
+ * highlights pooling where the light would land. Everything is drawn with
+ * react-native-svg, already here for the charts, so this costs no dependency
+ * and no rebuild.
+ *
+ * All of it is white at low opacity rather than a second hue, which is what
+ * keeps nine of these on one screen from turning into a paint chart.
  *
  * The gradient ids carry a per-instance suffix. SVG ids are document-global, so
  * five cards all defining "face" would every one of them paint with whichever
- * card mounted first — every wallet the same colour.
+ * mounted first — every wallet the same colour.
  */
-function BrandSurface({ colour, radius }: { colour: string; radius: number }): JSX.Element {
+export function BrandSurface({ colour, radius }: { colour: string; radius: number }): JSX.Element {
   // useId returns colons, which are legal in an id but awkward in a url(#…).
   const uid = useId().replace(/:/g, "");
   const face = `face${uid}`;
   const gloss = `gloss${uid}`;
+  const blob = `blob${uid}`;
 
   return (
-    <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
+    // width/height as well as absoluteFill: the style stretches the element,
+    // but an <svg> with no sizing attributes still lays its *canvas* out at the
+    // SVG default of 300x150, so on anything wider the fill stopped dead at
+    // 300px and left a hard seam. Only visible once this was used on a
+    // full-width hero rather than a 158px card.
+    <Svg width="100%" height="100%" style={StyleSheet.absoluteFill} pointerEvents="none">
       <Defs>
         <LinearGradient id={face} x1="0" y1="0" x2="1" y2="1">
-          <Stop offset="0" stopColor={shift(colour, 0.3)} />
-          <Stop offset="0.52" stopColor={colour} />
-          <Stop offset="1" stopColor={shift(colour, -0.3)} />
+          <Stop offset="0" stopColor={shift(colour, 0.32)} />
+          <Stop offset="0.5" stopColor={colour} />
+          <Stop offset="1" stopColor={shift(colour, -0.34)} />
         </LinearGradient>
         <LinearGradient id={gloss} x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor="#ffffff" stopOpacity="0.34" />
+          <Stop offset="0" stopColor="#ffffff" stopOpacity="0.30" />
           <Stop offset="1" stopColor="#ffffff" stopOpacity="0" />
         </LinearGradient>
+        {/* A blob with a hard edge reads as a sticker. Fading it to nothing at
+            its own rim is what makes it look like light on a surface. */}
+        <RadialGradient id={blob} cx="50%" cy="50%" r="50%">
+          <Stop offset="0" stopColor="#ffffff" stopOpacity="0.20" />
+          <Stop offset="0.6" stopColor="#ffffff" stopOpacity="0.10" />
+          <Stop offset="1" stopColor="#ffffff" stopOpacity="0" />
+        </RadialGradient>
       </Defs>
+
       <Rect x="0" y="0" width="100%" height="100%" rx={radius} fill={`url(#${face})`} />
+
+      {/* Everything below bleeds off an edge on purpose. A circle that fits
+          inside the card reads as a dot someone put there; one running off the
+          side reads as the card being a window onto something larger. The
+          parent View clips them — see the overflow-hidden on the card. */}
+      <Circle cx="84%" cy="116%" r="58%" fill={`url(#${blob})`} />
+      <Circle cx="112%" cy="70%" r="38%" fill={`url(#${blob})`} />
+      {/* One crisp line against all that softness, so the card has an edge to
+          catch the eye rather than only washes. */}
+      <Circle
+        cx="14%"
+        cy="-18%"
+        r="34%"
+        fill="none"
+        stroke="#ffffff"
+        strokeOpacity={0.22}
+        strokeWidth={1}
+      />
       <Ellipse cx="82%" cy="-6%" rx="78%" ry="52%" fill={`url(#${gloss})`} />
     </Svg>
   );
@@ -800,7 +845,9 @@ export function TxnEditor({
             onPress={onDelete}
             className="min-h-[48px] justify-center rounded-full border border-border px-4 active:opacity-70"
           >
-            <Text style={{ fontFamily: "Archivo_600SemiBold", fontSize: 14, color: palette.danger }}>
+            <Text
+              style={{ fontFamily: "Archivo_600SemiBold", fontSize: 14, color: palette.danger }}
+            >
               Delete
             </Text>
           </Pressable>

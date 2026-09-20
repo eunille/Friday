@@ -70,7 +70,10 @@ export function pesoShort(centavos: Centavos): string {
 export const ACCOUNT_TYPES = {
   gcash: { label: "GCash", group: "E-wallets", colour: "#007DFE" },
   maya: { label: "Maya", group: "E-wallets", colour: "#00C17B" },
-  maribank: { label: "MariBank", group: "Banks", colour: "#12B3A8" },
+  // Sampled off the supplied logo. It lands close to UnionBank's orange, which
+  // is simply true of the two brands; the logo on each card is what tells them
+  // apart now, and that is the more reliable signal anyway.
+  maribank: { label: "MariBank", group: "Banks", colour: "#E4540A" },
   bdo: { label: "BDO", group: "Banks", colour: "#00539F" },
   bpi: { label: "BPI", group: "Banks", colour: "#A6192E" },
   unionbank: { label: "UnionBank", group: "Banks", colour: "#F47920" },
@@ -177,11 +180,7 @@ export function movementOn(accountId: string, txns: readonly Txn[]): Centavos {
  * silently re-add everything logged since, so the movement comes back out here.
  * Balances stay derived; the field stays the one a person can verify.
  */
-export function openingFor(
-  accountId: string,
-  txns: readonly Txn[],
-  balance: Centavos
-): Centavos {
+export function openingFor(accountId: string, txns: readonly Txn[], balance: Centavos): Centavos {
   return balance - movementOn(accountId, txns);
 }
 

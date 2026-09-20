@@ -5,7 +5,13 @@ import { useCallback, useMemo, useState, type JSX } from "react";
 import { ScrollView, Text, View } from "react-native";
 
 import { useConfirm } from "../../../components/dialog";
-import { BrandMark, TxnEditor, TxnRow, WalletEditor } from "../../../components/money";
+import {
+  BrandMark,
+  BrandSurface,
+  TxnEditor,
+  TxnRow,
+  WalletEditor,
+} from "../../../components/money";
 import { IconButton, PageHeader } from "../../../components/screen";
 import { DataGate, useAI } from "../../../lib/ai";
 import {
@@ -170,7 +176,18 @@ function Wallet(): JSX.Element {
         {/* The wallet's own colour, full width. On the dashboard this brand is
             one card among several; here it is the subject, so it carries the
             page the way --money carries the dashboard. */}
-        <View className="gap-3 rounded-[22px] p-4" style={{ backgroundColor: brand.colour }}>
+        <View
+          className="gap-3 overflow-hidden rounded-[22px] p-4"
+          style={{
+            backgroundColor: brand.colour,
+            shadowColor: brand.colour,
+            shadowOpacity: 0.4,
+            shadowRadius: 16,
+            shadowOffset: { width: 0, height: 8 },
+            elevation: 6,
+          }}
+        >
+          <BrandSurface colour={brand.colour} radius={22} />
           <View className="flex-row items-center gap-2.5">
             <BrandMark type={account.type} size={34} />
             <Text
@@ -215,8 +232,8 @@ function Wallet(): JSX.Element {
 
         {mine.length === 0 ? (
           <Typography.Paragraph className="pt-2 text-center font-read text-muted text-[15px] leading-6">
-            Nothing has gone through {account.name} yet. The balance above is what you started
-            it with.
+            Nothing has gone through {account.name} yet. The balance above is what you started it
+            with.
           </Typography.Paragraph>
         ) : (
           <View className="overflow-hidden rounded-2xl border border-border bg-surface">

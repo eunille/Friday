@@ -8,6 +8,7 @@ import Svg, { G, Rect } from "react-native-svg";
 import { useConfirm } from "../../components/dialog";
 import {
   ActionSheet,
+  BrandSurface,
   Chip,
   TxnEditor,
   TxnRow,
@@ -338,7 +339,11 @@ function Budget(): JSX.Element {
         {/* The one saturated surface in the app. Money is the subject of this
             screen, so the headline carries the colour and everything below it
             stays quiet — one bold thing reads as emphasis, six read as noise. */}
-        <View className="gap-3 rounded-[22px] p-4" style={{ backgroundColor: palette.money }}>
+        <View
+          className="gap-3 overflow-hidden rounded-[22px] p-4"
+          style={{ backgroundColor: palette.money }}
+        >
+          <BrandSurface colour={palette.money} radius={22} />
           <View>
             <Text
               style={{
@@ -366,7 +371,12 @@ function Budget(): JSX.Element {
                 headline. With no card, held is the headline again. */}
             {owed > 0 && (
               <>
-                <HeroStat icon="wallet" label="held" value={held} colour={palette.moneyForeground} />
+                <HeroStat
+                  icon="wallet"
+                  label="held"
+                  value={held}
+                  colour={palette.moneyForeground}
+                />
                 <HeroStat icon="card" label="owed" value={owed} colour={palette.moneyForeground} />
               </>
             )}
@@ -539,8 +549,8 @@ function Budget(): JSX.Element {
 
             {shown.length === 0 ? (
               <Typography.Paragraph className="pt-4 text-center font-read text-muted text-[15px] leading-6">
-                Nothing logged yet. Open Ask and type what you spent — &ldquo;250 lunch
-                gcash&rdquo; is enough.
+                Nothing logged yet. Open Ask and type what you spent — &ldquo;250 lunch gcash&rdquo;
+                is enough.
               </Typography.Paragraph>
             ) : (
               <View className="overflow-hidden rounded-2xl border border-border bg-surface">
