@@ -342,7 +342,10 @@ function Chat(): JSX.Element {
 
   return (
     <View className="flex-1 bg-background" onLayout={onLayout}>
-      <View className="flex-row items-center gap-1 px-3 pb-1" style={{ paddingTop: insets.top + 6 }}>
+      <View
+        className="flex-row items-center gap-1 px-3 pb-1"
+        style={{ paddingTop: insets.top + 6 }}
+      >
         <Typography.Heading
           type="h1"
           className="flex-1 pl-1 font-ui-bold text-[26px] tracking-tight"
@@ -415,7 +418,7 @@ function Chat(): JSX.Element {
             <View className="items-center justify-center py-6">
               <Image
                 source={require("../../../assets/images/splash-icon.png")}
-                style={{ width: 140, height: 104 }}
+                style={{ width: 120, height: 120 }}
                 resizeMode="contain"
               />
             </View>

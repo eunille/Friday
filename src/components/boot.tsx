@@ -22,7 +22,7 @@ const INK = "#F2F3F5";
 
 const SHEET = require("../../assets/images/sprites/intro-sheet.png");
 
-const NAME = "Offline AI";
+const NAME = "Friday";
 
 /**
  * The shot list: `[until ms, frame]`, read top to bottom, first match wins.
@@ -32,29 +32,29 @@ const NAME = "Offline AI";
  * eyes; 11 is the sparkle burst, which is where it stays.
  */
 const SHOTS: readonly (readonly [number, number])[] = [
-  [70, 0],
-  [140, 1],
-  [210, 2],
-  [280, 3],
-  [350, 4],
-  [420, 1],
-  [490, 2],
-  [560, 3],
-  [630, 4],
-  [790, 5],
-  [870, 6],
-  [940, 7],
-  [1080, 8],
-  [1220, 9],
-  [1320, 10],
+  [105, 0],
+  [210, 1],
+  [315, 2],
+  [420, 3],
+  [525, 4],
+  [630, 1],
+  [735, 2],
+  [840, 3],
+  [945, 4],
+  [1185, 5],
+  [1305, 6],
+  [1410, 7],
+  [1620, 8],
+  [1830, 9],
+  [1980, 10],
 ];
 const BURST = 11;
 
 /** Beats, in ms from mount, so the sequence can be read in one place. */
-const RUN = 1500; // the clock the sprite and the flight path both read
-const WORD = 980; // first letter, once he is on his feet
-const STAGGER = 32; // between letters
-const LEAVE = 1700;
+const RUN = 2250; // the clock the sprite and the flight path both read
+const WORD = 1470; // first letter, once he is on his feet
+const STAGGER = 44; // between letters
+const LEAVE = 2550;
 
 /**
  * One letter of the wordmark.
@@ -74,7 +74,7 @@ function Letter({ char, delay }: { char: string; delay: number }): JSX.Element {
 
   const style = useAnimatedStyle(() => ({
     opacity: show.value,
-    transform: [{ translateY: 6 * (1 - show.value) }],
+    transform: [{ translateY: Math.round(6 * (1 - show.value)) }],
   }));
 
   // A space has no glyph to fade, so it is a fixed gap instead — animating it
@@ -85,7 +85,7 @@ function Letter({ char, delay }: { char: string; delay: number }): JSX.Element {
     <Animated.Text
       style={[
         style,
-        { color: INK, fontFamily: "Archivo_600SemiBold", fontSize: 19, letterSpacing: 1.5 },
+        { color: INK, fontFamily: "PressStart2P_400Regular", fontSize: 16, letterSpacing: 2 },
       ]}
     >
       {char}
@@ -146,13 +146,13 @@ export function Boot({ onDone }: { onDone: () => void }): JSX.Element | null {
   const flight = useAnimatedStyle(() => ({
     transform: [
       {
-        translateX: interpolate(clock.value, [0, 630], [-140, 0], Extrapolation.CLAMP),
+        translateX: interpolate(clock.value, [0, 945], [-140, 0], Extrapolation.CLAMP),
       },
       {
         // Up first, forward across the climb, then down onto the spot.
         translateY: interpolate(
           clock.value,
-          [0, 350, 630, 700, 790],
+          [0, 525, 945, 1050, 1185],
           [150, -20, -40, -30, 0],
           Extrapolation.CLAMP
         ),
@@ -161,7 +161,7 @@ export function Boot({ onDone }: { onDone: () => void }): JSX.Element | null {
         // Far, then close, settling at 1 — and a pop when the sparks go.
         scale: interpolate(
           clock.value,
-          [0, 350, 630, 790, 1320, 1400, 1500],
+          [0, 525, 945, 1185, 1980, 2100, 2250],
           [0.5, 0.92, 1.07, 1, 1, 1.12, 1],
           Extrapolation.CLAMP
         ),

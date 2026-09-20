@@ -21,6 +21,7 @@
   "dependencies": {
     "@expo-google-fonts/archivo": "^0.4.2",
     "@expo-google-fonts/newsreader": "^0.4.1",
+    "@expo-google-fonts/press-start-2p": "^0.4.1",
     "@expo/metro-runtime": "~57.0.14",
     "@expo/vector-icons": "^15.1.1",
     "@gorhom/bottom-sheet": "^5.2.14",

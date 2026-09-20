@@ -8,6 +8,7 @@ import {
   Newsreader_400Regular_Italic,
   Newsreader_600SemiBold,
 } from "@expo-google-fonts/newsreader";
+import { PressStart2P_400Regular } from "@expo-google-fonts/press-start-2p";
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -79,6 +80,8 @@ export default function RootLayout(): JSX.Element | null {
     Newsreader_400Regular,
     Newsreader_600SemiBold,
     Newsreader_400Regular_Italic,
+    // The opening's wordmark, to match a pixel mascot.
+    PressStart2P_400Regular,
   });
 
   // Missing fonts degrade to the system face; that is worth shipping, a blank
