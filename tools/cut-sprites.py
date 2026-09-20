@@ -65,18 +65,6 @@ POSES = {
     "happy": (349, 507, 469, 639),
 }
 
-# The Money/Finance props, for the places on the money screen that had a line
-# icon sitting next to pixel art and looked borrowed.
-PROP = 72
-PROPS = {
-    "coin": (485, 507, 532, 577),
-    "coins": (550, 507, 615, 577),
-    "cash": (628, 507, 687, 577),
-    "bag": (704, 507, 763, 577),
-    "wallet": (494, 578, 551, 639),
-    "card": (572, 578, 634, 639),
-    "chart": (657, 578, 703, 639),
-}
 
 
 ICON = 1024
@@ -189,20 +177,6 @@ def faces() -> Image.Image:
     return strip.resize((strip.size[0] * 2, strip.size[1] * 2), Image.NEAREST)
 
 
-def props() -> Image.Image:
-    """The money props, on one strip, in square cells."""
-    strip = Image.new("RGBA", (PROP * len(PROPS), PROP), (0, 0, 0, 0))
-    for column, box in enumerate(PROPS.values()):
-        cell = keyed(box)
-        cell = cell.crop(cell.getbbox())
-        scale = min((PROP - GUTTER * 2) / cell.size[1], (PROP - GUTTER * 2) / cell.size[0])
-        cell = cell.resize((round(cell.size[0] * scale), round(cell.size[1] * scale)), Image.BOX)
-        strip.alpha_composite(
-            cell, (column * PROP + (PROP - cell.size[0]) // 2, (PROP - cell.size[1]) // 2)
-        )
-    return strip.resize((strip.size[0] * 2, strip.size[1] * 2), Image.NEAREST)
-
-
 def main() -> None:
     owl = cut()
     print(f"idle owl: {owl.size[0]}x{owl.size[1]} art pixels")
@@ -225,9 +199,6 @@ def main() -> None:
     poses.save("assets/images/sprites/faces-sheet.png", optimize=True)
     print(f"faces-sheet: {poses.size[0]}x{poses.size[1]}, {', '.join(POSES)}")
 
-    kit = props()
-    kit.save("assets/images/sprites/props-sheet.png", optimize=True)
-    print(f"props-sheet: {kit.size[0]}x{kit.size[1]}, {', '.join(PROPS)}")
 
 
 

@@ -329,38 +329,6 @@ export function Chip({
   );
 }
 
-/** The Money/Finance props, in the order they sit on `props-sheet.png`. */
-const PROPS = ["coin", "coins", "cash", "bag", "wallet", "card", "chart"] as const;
-export type MoneyProp = (typeof PROPS)[number];
-
-const PROPS_SHEET = require("../../assets/images/sprites/props-sheet.png");
-
-/**
- * A money prop from the atlas, where a line icon used to sit.
- *
- * The money screen is pixel art surrounded by outline icons, and the two read
- * as different apps stacked on each other. Same window-and-offset trick as the
- * mascot, so seven props cost one decode.
- */
-export function MoneyIcon({ name, size = 24 }: { name: MoneyProp; size?: number }): JSX.Element {
-  return (
-    <View
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      style={{ width: size, height: size, overflow: "hidden" }}
-    >
-      <Image
-        source={PROPS_SHEET}
-        style={{
-          width: size * PROPS.length,
-          height: size,
-          transform: [{ translateX: -PROPS.indexOf(name) * size }],
-        }}
-      />
-    </View>
-  );
-}
-
 /* ---------------------------------------------------------------- wallets --- */
 
 /**

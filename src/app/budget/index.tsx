@@ -11,7 +11,6 @@ import {
   ActionSheet,
   BrandSurface,
   Chip,
-  MoneyIcon,
   TxnEditor,
   TxnRow,
   WalletCard,
@@ -596,7 +595,12 @@ function Budget(): JSX.Element {
             className="flex-1 gap-1.5 rounded-2xl border border-border bg-surface p-3.5 active:bg-surface-tertiary"
           >
             <View className="flex-row items-center gap-1.5">
-              <MoneyIcon name="coins" size={28} />
+              <View
+                className="h-7 w-7 items-center justify-center rounded-lg"
+                style={{ backgroundColor: `${palette.warning}22` }}
+              >
+                <Ionicons name="repeat" size={15} color={palette.warning} />
+              </View>
               {/* The badge earns its place: it is the only thing here that is
                   asking to be acted on. */}
               {dueNow > 0 && (
@@ -633,7 +637,12 @@ function Budget(): JSX.Element {
             onPress={() => setTab("plan")}
             className="flex-1 gap-1.5 rounded-2xl border border-border bg-surface p-3.5 active:bg-surface-tertiary"
           >
-            <MoneyIcon name="chart" size={28} />
+            <View
+              className="h-7 w-7 items-center justify-center rounded-lg"
+              style={{ backgroundColor: `${palette.plan}22` }}
+            >
+              <Ionicons name="flag" size={15} color={palette.plan} />
+            </View>
             <Text
               style={{
                 color: plan.alarm ? palette.danger : palette.foreground,
