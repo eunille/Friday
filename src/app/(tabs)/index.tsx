@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Typography } from "heroui-native";
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
-import { FlatList, Image, Pressable, TextInput, View } from "react-native";
+import { FlatList, Image, Pressable, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -26,7 +26,7 @@ import {
   systemPrompt,
   useAI,
 } from "../../lib/ai";
-import { useDictation } from "../../lib/dictation";
+import { Composer } from "../../components/composer";
 import { useKeyboardOverlap, usePalette } from "../../lib/theme";
 
 const SUGGESTIONS = [
@@ -198,14 +198,6 @@ function Chat(): JSX.Element {
   const chatId = useRef(newChatId());
 
   const busy = streaming !== null;
-
-  // Dictated words join the draft rather than sending straight away, so a
-  // misheard word can be fixed before the model ever sees it.
-  const dictation = useDictation(
-    useCallback((heard: string) => {
-      setDraft((prev) => (prev.trim() ? `${prev.trim()} ${heard}` : heard));
-    }, [])
-  );
 
   // Opened from the dashboard with ?chat=<id>: pick that conversation back up.
   const { chat: resume } = useLocalSearchParams<{ chat?: string }>();
@@ -449,118 +441,50 @@ function Chat(): JSX.Element {
         }
       />
 
-      {/* Lifted by however much of the keyboard the system did not already
-          account for — see useKeyboardOverlap. Assuming either behaviour is
-          what kept putting this field back underneath the keys. */}
-      <View
-        className="gap-2.5 border-t border-border bg-surface px-4 pb-3 pt-3"
-        style={{ marginBottom: overlap }}
-      >
-        {(dictation.recording || dictation.working || dictation.notice) && (
-          <Pressable
-            accessibilityRole={dictation.notice ? "button" : undefined}
-            onPress={dictation.notice ? dictation.dismiss : undefined}
-            className="flex-row items-center gap-2 rounded-xl bg-warning-soft px-3 py-2"
-          >
-            <Ionicons
-              name={dictation.notice ? "alert-circle-outline" : "mic"}
-              size={14}
-              color={palette.warning}
-            />
-            <Typography.Paragraph className="flex-1 font-ui-medium text-[11px] text-muted-strong">
-              {dictation.notice
-                ? dictation.notice
-                : dictation.working
-                  ? "Writing down what you said…"
-                  : dictation.downloadProgress > 0 && dictation.downloadProgress < 1
-                    ? `Getting the voice model, once only · ${Math.round(dictation.downloadProgress * 100)}%`
-                    : "Listening — tap the square to stop"}
-            </Typography.Paragraph>
-          </Pressable>
-        )}
-
-        <View className="flex-row items-center gap-2">
-          <Pressable
-            accessibilityRole="switch"
-            accessibilityState={{ checked: useNotes }}
-            onPress={() => setUseNotes((on) => !on)}
-            className={`min-h-[34px] flex-row items-center gap-1.5 rounded-full border px-2.5 ${
-              useNotes ? "border-accent bg-accent-soft" : "border-border"
-            }`}
-          >
-            <Ionicons
-              name={useNotes ? "layers" : "layers-outline"}
-              size={14}
-              color={useNotes ? palette.accent : palette.muted}
-            />
-            <Typography.Paragraph
-              className={`font-ui-medium text-[11px] ${useNotes ? "text-accent" : "text-muted"}`}
+      <Composer
+        value={draft}
+        onChange={setDraft}
+        onSend={() => void ask(draft.trim(), entries)}
+        placeholder="Ask anything…"
+        busy={busy}
+        onStop={() => void rag?.interrupt()}
+        overlap={overlap}
+        controls={
+          <View className="flex-row items-center gap-2">
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: useNotes }}
+              onPress={() => setUseNotes((on) => !on)}
+              className={`min-h-[34px] flex-row items-center gap-1.5 rounded-full border px-2.5 ${
+                useNotes ? "border-accent bg-accent-soft" : "border-border"
+              }`}
             >
-              {useNotes ? "Reading notes" : "Notes off"}
-            </Typography.Paragraph>
-          </Pressable>
+              <Ionicons
+                name={useNotes ? "layers" : "layers-outline"}
+                size={14}
+                color={useNotes ? palette.accent : palette.muted}
+              />
+              <Typography.Paragraph
+                className={`font-ui-medium text-[11px] ${useNotes ? "text-accent" : "text-muted"}`}
+              >
+                {useNotes ? "Reading notes" : "Notes off"}
+              </Typography.Paragraph>
+            </Pressable>
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Change answer length and tone"
-            onPress={() => router.push("/settings")}
-            className="min-h-[34px] flex-row items-center gap-1.5 rounded-full border border-border px-2.5"
-          >
-            <Ionicons name="options-outline" size={14} color={palette.muted} />
-            <Typography.Paragraph className="font-ui-medium text-[11px] text-muted">
-              {LENGTHS[settings.length].label}
-            </Typography.Paragraph>
-          </Pressable>
-        </View>
-
-        <View className="flex-row items-end gap-2">
-          <TextInput
-            className="max-h-32 min-h-[46px] flex-1 rounded-[20px] border border-border bg-background px-4 py-2.5 font-ui text-[15px] text-foreground"
-            placeholder="Ask anything…"
-            placeholderTextColor={palette.placeholder}
-            value={draft}
-            onChangeText={setDraft}
-            multiline
-          />
-          {/* Dictation. Amber while it is listening or transcribing, because
-              that is the app's "working" signal everywhere else. */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ busy: dictation.recording || dictation.working }}
-            accessibilityLabel={
-              dictation.recording ? "Stop dictating" : "Dictate instead of typing"
-            }
-            disabled={dictation.working}
-            onPress={dictation.toggle}
-            className={`h-[46px] w-[46px] items-center justify-center rounded-full border ${
-              dictation.recording ? "border-warning bg-warning-soft" : "border-border bg-surface"
-            }`}
-            style={{ opacity: dictation.working ? 0.55 : 1 }}
-          >
-            <Ionicons
-              name={dictation.recording ? "stop" : "mic-outline"}
-              size={20}
-              color={dictation.recording || dictation.working ? palette.warning : palette.muted}
-            />
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={busy ? "Stop generating" : "Send"}
-            onPress={() => (busy ? void rag?.interrupt() : void ask(draft.trim(), entries))}
-            disabled={!busy && !draft.trim()}
-            className={`h-[46px] w-[46px] items-center justify-center rounded-full ${
-              busy ? "bg-surface-tertiary" : "bg-accent"
-            }`}
-            style={{ opacity: !busy && !draft.trim() ? 0.35 : 1 }}
-          >
-            <Ionicons
-              name={busy ? "stop" : "arrow-up"}
-              size={20}
-              color={busy ? palette.foreground : palette.accentForeground}
-            />
-          </Pressable>
-        </View>
-      </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Change answer length and tone"
+              onPress={() => router.push("/settings")}
+              className="min-h-[34px] flex-row items-center gap-1.5 rounded-full border border-border px-2.5"
+            >
+              <Ionicons name="options-outline" size={14} color={palette.muted} />
+              <Typography.Paragraph className="font-ui-medium text-[11px] text-muted">
+                {LENGTHS[settings.length].label}
+              </Typography.Paragraph>
+            </Pressable>
+          </View>
+        }
+      />
     </View>
   );
 }

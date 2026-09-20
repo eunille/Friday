@@ -2,9 +2,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Typography } from "heroui-native";
 import { useCallback, useMemo, useRef, useState, type JSX } from "react";
-import { Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { Composer } from "../../components/composer";
 import { PageHeader } from "../../components/screen";
 import { DataGate, useAI } from "../../lib/ai";
 import {
@@ -170,7 +171,7 @@ function DraftRow({
   );
 }
 
-function Ask(): JSX.Element {
+function BudgetChat(): JSX.Element {
   const { db } = useAI();
   const router = useRouter();
   const palette = usePalette();
@@ -191,7 +192,7 @@ function Ask(): JSX.Element {
 
   // On focus, not just on mount. Pushed screens stay mounted underneath, so a
   // balance read once at mount still showed the old number after logging
-  // something in Ask and coming back — the screen had never been told to look
+  // something in Budget and coming back — the screen was never told to look
   // again.
   useFocusEffect(refresh);
 
@@ -239,7 +240,7 @@ function Ask(): JSX.Element {
 
   return (
     <View className="flex-1 bg-background" onLayout={onLayout}>
-      <PageHeader title="Ask" onBack={() => router.back()} />
+      <PageHeader title="Budget" onBack={() => router.back()} />
 
       <ScrollView
         ref={listRef}
@@ -387,49 +388,31 @@ function Ask(): JSX.Element {
         })}
       </ScrollView>
 
-      <View
-        className="gap-2 border-t border-border bg-surface px-4 pt-3"
-        style={{ paddingBottom: Math.max(insets.bottom, 10) + overlap }}
-      >
-        <View className="flex-row items-end gap-2">
-          <TextInput
-            value={input}
-            onChangeText={setInput}
-            multiline
-            placeholder={live.length === 0 ? "Add a wallet first" : "Lunch 250 from GCash…"}
-            placeholderTextColor={palette.muted}
-            editable={live.length > 0}
-            className="max-h-28 flex-1 rounded-2xl border border-border bg-background px-3.5 py-2.5 font-ui text-[14.5px] text-foreground"
-          />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Send"
-            disabled={input.trim() === "" || live.length === 0}
-            onPress={send}
-            className="h-11 w-11 items-center justify-center rounded-full active:opacity-80"
-            style={{
-              backgroundColor: palette.accent,
-              opacity: input.trim() === "" || live.length === 0 ? 0.35 : 1,
-            }}
-          >
-            <Ionicons name="arrow-up" size={19} color={palette.accentForeground} />
-          </Pressable>
-        </View>
-        {/* Not the usual "AI can make mistakes" line, because this is not a
-            model. It reads the numbers by rule and shows every row before it
-            writes any of them. */}
-        <Typography.Paragraph className="pb-1 text-center font-ui text-[10px] text-muted-soft">
-          Read on this phone by rule, not by a model. Nothing is saved until you tap Log.
-        </Typography.Paragraph>
-      </View>
+      <Composer
+        value={input}
+        onChange={setInput}
+        onSend={send}
+        editable={live.length > 0}
+        placeholder={live.length === 0 ? "Add a wallet first" : "Lunch 250 from GCash…"}
+        overlap={overlap}
+        bottomInset={insets.bottom}
+        footnote={
+          /* Not the usual "AI can make mistakes" line, because this is not a
+             model. It reads the numbers by rule and shows every row before it
+             writes any of them. */
+          <Typography.Paragraph className="text-center font-ui text-[10px] text-muted-soft">
+            Read on this phone by rule, not by a model. Nothing is saved until you tap Log.
+          </Typography.Paragraph>
+        }
+      />
     </View>
   );
 }
 
-export default function AskScreen(): JSX.Element {
+export default function BudgetChatScreen(): JSX.Element {
   return (
     <DataGate>
-      <Ask />
+      <BudgetChat />
     </DataGate>
   );
 }

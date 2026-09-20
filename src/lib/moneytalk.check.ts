@@ -185,7 +185,11 @@ assert.notEqual(read("moved 500 from gcash to gcash")?.txn.kind, "transfer");
 // The wallet was referred to by type, not by name, and the note kept it: the
 // row used to read "I spended my gcash".
 assert.equal(read("i spended 1500 using my gcash")?.txn.note, undefined);
-assert.equal(read("paid netflix 499 maya")?.txn.note, "Netflix", "the brand survives, the rest goes");
+assert.equal(
+  read("paid netflix 499 maya")?.txn.note,
+  "Netflix",
+  "the brand survives, the rest goes"
+);
 assert.equal(read("grab going home 180 gcash")?.txn.note, "Grab going home");
 
 // A wallet name holding regex metacharacters must not blow up the note pass.
@@ -216,7 +220,11 @@ assert.equal(read("kahapon 200 jeep from cash")?.txn.at.slice(0, 10), "2026-09-1
 assert.equal(read("dinner 450 from gcash")?.txn.at.slice(0, 10), "2026-09-18");
 
 // Crossing a month boundary must roll the month, not produce day zero.
-const firstOfMonth = parseLine("lunch 250 from gcash yesterday", accounts, new Date("2026-10-01T04:00:00.000Z"));
+const firstOfMonth = parseLine(
+  "lunch 250 from gcash yesterday",
+  accounts,
+  new Date("2026-10-01T04:00:00.000Z")
+);
 assert.equal(firstOfMonth?.txn.at.slice(0, 10), "2026-09-30");
 
 // Every field the screen can flag has something to call it.

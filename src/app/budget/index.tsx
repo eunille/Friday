@@ -186,7 +186,7 @@ function Budget(): JSX.Element {
 
   // On focus, not just on mount. Pushed screens stay mounted underneath, so a
   // balance read once at mount still showed the old number after logging
-  // something in Ask and coming back — the screen had never been told to look
+  // something in Budget and coming back — the screen was never told to look
   // again.
   useFocusEffect(refresh);
 
@@ -302,8 +302,8 @@ function Budget(): JSX.Element {
           {
             key: "ask",
             icon: "chatbubble-ellipses" as const,
-            label: "Log with Ask",
-            hint: "Type what you spent and it files it",
+            label: "Log with Budget",
+            hint: "Type or say what you spent and it files it",
             tint: palette.ask,
             onPress: () => router.push("/budget/ask"),
           },
@@ -454,7 +454,7 @@ function Budget(): JSX.Element {
             {
               key: "ask",
               icon: "chatbubble-ellipses",
-              label: "Ask",
+              label: "Budget",
               tint: palette.ask,
               go: () => router.push("/budget/ask"),
               off: live.length === 0,
@@ -549,7 +549,7 @@ function Budget(): JSX.Element {
 
             {shown.length === 0 ? (
               <Typography.Paragraph className="pt-4 text-center font-read text-muted text-[15px] leading-6">
-                Nothing logged yet. Open Ask and type what you spent — &ldquo;250 lunch gcash&rdquo;
+                Nothing logged yet. Open Budget and say what you spent — &ldquo;250 lunch gcash&rdquo;
                 is enough.
               </Typography.Paragraph>
             ) : (
