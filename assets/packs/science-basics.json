@@ -1,0 +1,54 @@
+{
+  "id": "science-basics",
+  "title": "Science basics",
+  "entries": [
+    {
+      "title": "The cell",
+      "text": "Every living thing is made of cells. A cell holds its instructions in DNA, builds proteins from them, and keeps itself separate from the outside with a membrane. Bacteria are a single cell; you are about thirty trillion."
+    },
+    {
+      "title": "DNA",
+      "text": "DNA is a long molecule spelled with four letters: A, T, G and C. The order of those letters is the recipe for proteins, and proteins do almost all the work in a cell. Copying DNA is how traits pass to offspring."
+    },
+    {
+      "title": "Photosynthesis",
+      "text": "Plants use sunlight to combine carbon dioxide and water into sugar, releasing oxygen as a by-product. Almost all the energy in the food chain, and the oxygen you are breathing now, arrived this way."
+    },
+    {
+      "title": "States of matter",
+      "text": "Solid, liquid and gas differ in how tightly the particles are held, not in what they are made of. Adding energy loosens the bonds, which is why ice, water and steam are the same molecule at different temperatures."
+    },
+    {
+      "title": "Atoms and elements",
+      "text": "An atom is a nucleus of protons and neutrons with electrons around it. The number of protons decides which element it is: one proton is hydrogen, six is carbon. Everything else is combinations."
+    },
+    {
+      "title": "Newton's three laws",
+      "text": "Things keep doing what they are doing unless a force acts on them. Force equals mass times acceleration. Every force has an equal and opposite one. Between them these describe most motion you will ever see."
+    },
+    {
+      "title": "Gravity",
+      "text": "Any two masses attract each other, and the attraction grows with mass and falls off sharply with distance. It holds you to the ground, the Moon to the Earth, and the Earth to the Sun."
+    },
+    {
+      "title": "Energy is conserved",
+      "text": "Energy is never created or destroyed, only moved and converted: chemical to kinetic, kinetic to heat. This is why a perpetual motion machine cannot work, and why everything eventually warms its surroundings."
+    },
+    {
+      "title": "Electricity",
+      "text": "Current is the flow of charge, voltage is the push behind it, and resistance is what opposes it. They relate as voltage equals current times resistance, which is enough to explain most simple circuits."
+    },
+    {
+      "title": "The water cycle",
+      "text": "Water evaporates, rises, cools, condenses into cloud, and falls as rain or snow before running back to the sea. The same water has been going round for billions of years."
+    },
+    {
+      "title": "Evolution by natural selection",
+      "text": "Organisms vary, some variations survive and reproduce better than others, and those variations become more common. Given enough time this produces the close fit between a living thing and where it lives."
+    },
+    {
+      "title": "The scientific method",
+      "text": "Propose an explanation, work out what it predicts, then test the prediction in a way that could prove you wrong. An idea that no observation could contradict is not a scientific one."
+    }
+  ]
+}

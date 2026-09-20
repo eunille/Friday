@@ -1,0 +1,58 @@
+{
+  "id": "world-history",
+  "title": "World history, in outline",
+  "entries": [
+    {
+      "title": "Farming changes everything",
+      "text": "Around 10,000 BCE people in several regions independently began growing crops and keeping animals. A settled food supply allowed permanent villages, stored surplus, specialised work and eventually cities."
+    },
+    {
+      "title": "Writing and the first cities",
+      "text": "By roughly 3000 BCE Mesopotamia and Egypt had cities, kings and writing. Writing began as accounting, counting grain and taxes, long before anyone used it for stories."
+    },
+    {
+      "title": "The classical world",
+      "text": "Greece, Persia, India, China and Rome built large states with roads, law, coinage and standing armies. Much of what Europe later called philosophy, and much of Asian statecraft, was set down in this period."
+    },
+    {
+      "title": "After Rome",
+      "text": "The western Roman empire fragmented during the 5th century while the eastern half continued from Constantinople for another thousand years. Europe became a patchwork of smaller kingdoms."
+    },
+    {
+      "title": "The Islamic Golden Age",
+      "text": "From the 8th to the 13th centuries, scholars across the Islamic world preserved and extended Greek, Persian and Indian learning in algebra, optics, medicine and astronomy, and passed much of it on to Europe."
+    },
+    {
+      "title": "Printing and the Renaissance",
+      "text": "Movable type in Europe around 1450 made books cheap enough that ideas spread faster than authorities could control them. Literacy, science and religious reform accelerated together."
+    },
+    {
+      "title": "The age of exploration",
+      "text": "European ships reached the Americas, Africa and Asia from the late 15th century, connecting the continents permanently. It also ran on conquest, colonies and the transatlantic slave trade."
+    },
+    {
+      "title": "Spanish rule in the Philippines",
+      "text": "Spain claimed the islands from 1565 and governed them for over three centuries from Manila, which linked Asian trade to the Americas through the galleons. Catholicism, land systems and place names from this period persist."
+    },
+    {
+      "title": "The Industrial Revolution",
+      "text": "From the late 18th century, steam power and factories moved production out of homes and workshops. Cities grew enormously, work changed shape, and for the first time output per person rose without an obvious ceiling."
+    },
+    {
+      "title": "Revolutions and nation states",
+      "text": "The American and French revolutions in the late 18th century placed sovereignty in the people rather than a monarch. The idea spread and redrew much of the world map over the following century."
+    },
+    {
+      "title": "Philippine independence",
+      "text": "The revolution against Spain led to a declaration of independence in 1898, which was followed by American rule rather than sovereignty. Full independence came in 1946, after the Japanese occupation during the Second World War."
+    },
+    {
+      "title": "The World Wars",
+      "text": "The First World War, from 1914 to 1918, ended four empires and settled little. The Second, from 1939 to 1945, was wider and deadlier, ended with the Holocaust exposed and nuclear weapons used, and produced the United Nations."
+    },
+    {
+      "title": "The Cold War and after",
+      "text": "The United States and the Soviet Union divided much of the world into camps until 1991, while dozens of colonies across Asia and Africa became independent states. Most of today's borders were fixed in this period."
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "id": "emergency-prep",
+  "title": "Emergency prep",
+  "entries": [
+    {
+      "title": "Get help first",
+      "text": "In a real emergency, contact the emergency services before anything else: 911 in the Philippines, and your local number elsewhere. This pack is general preparation information, not medical or rescue instruction, and local authorities override anything written here."
+    },
+    {
+      "title": "The rule of threes",
+      "text": "Roughly, a person survives three minutes without air, three days without water and three weeks without food. It is only a guide, but it tells you what to solve first: air, then shelter from heat or cold, then water, then food."
+    },
+    {
+      "title": "Making water safe",
+      "text": "Bringing water to a rolling boil for one minute kills the organisms behind most waterborne illness, and three minutes above about 2,000 metres where water boils cooler. Let sediment settle or strain it through cloth first. Boiling does not remove chemicals."
+    },
+    {
+      "title": "A go-bag",
+      "text": "Keep one bag ready: water, a few days of food that needs no cooking, a torch, spare batteries, a power bank, copies of ID in a sealed pouch, cash in small notes, any regular medication, and a whistle. Check it twice a year."
+    },
+    {
+      "title": "Earthquake: drop, cover, hold on",
+      "text": "Get down, get under sturdy furniture, and hold on until the shaking stops. Doorways are not safer than anywhere else in a modern building. Outdoors, move away from walls, glass and power lines."
+    },
+    {
+      "title": "After the shaking stops",
+      "text": "Expect aftershocks. Check for the smell of gas and leave if you find any. Stay out of visibly damaged buildings, and use the stairs rather than a lift."
+    },
+    {
+      "title": "Before a typhoon",
+      "text": "Charge everything, fill containers with clean water, bring in or tie down anything outside that can fly, and know where the nearest evacuation centre is. Decide whether you are leaving before the wind arrives, not during."
+    },
+    {
+      "title": "Floodwater",
+      "text": "Do not walk into moving water above your knees, and do not drive into it at all, as most flood deaths happen in vehicles. Floodwater also carries sewage and hides open drains, so treat any contact as contaminated."
+    },
+    {
+      "title": "Power cuts and food",
+      "text": "A closed fridge keeps food safe for about four hours and a full freezer for about 48. Keep them shut. Food left above roughly 5C for more than two hours should be thrown out rather than sniffed."
+    },
+    {
+      "title": "Fire",
+      "text": "Get everyone out first and call for help from outside. Do not stop to collect belongings. Smoke rises, so stay low, and close doors behind you as you go, because a closed door buys minutes."
+    },
+    {
+      "title": "Being found",
+      "text": "Three of anything, such as three whistle blasts, three flashes or three fires, is the recognised distress signal. A whistle carries much further than a voice and costs almost no energy."
+    },
+    {
+      "title": "Agree on a plan now",
+      "text": "Pick a meeting point and one out-of-area contact everyone can message, because local lines fail first and a distant relay often still works. Write it on paper, because phones run out."
+    }
+  ]
+}

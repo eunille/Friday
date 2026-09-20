@@ -1,0 +1,54 @@
+{
+  "id": "study-skills",
+  "title": "How to study",
+  "entries": [
+    {
+      "title": "Active recall beats rereading",
+      "text": "Closing the book and trying to write down what you remember is far more effective than reading the page again. Rereading feels productive because the text becomes familiar, but familiarity is not recall."
+    },
+    {
+      "title": "Spaced repetition",
+      "text": "Review material at growing intervals: a day later, then three days, then a week, then a month. Each successful recall after a gap strengthens the memory more than an immediate one. Flashcards work because they enforce this."
+    },
+    {
+      "title": "Interleaving",
+      "text": "Mixing topics within one session feels harder and works better than doing all of one type in a block. Blocked practice teaches you to apply a method; interleaved practice teaches you to choose one."
+    },
+    {
+      "title": "The testing effect",
+      "text": "Taking a practice test teaches you more than spending the same time studying, even when you get answers wrong. The attempt to retrieve is what strengthens the memory, not the marking."
+    },
+    {
+      "title": "Ask why, not just what",
+      "text": "Explaining why a fact is true connects it to what you already know, and connected facts are far easier to retrieve later. A lone memorised fact has nothing holding it in place."
+    },
+    {
+      "title": "Two channels beat one",
+      "text": "Pairing words with a diagram, a timeline or a sketch gives the memory two routes back to the same idea. Copying someone else's diagram is weaker than drawing your own badly."
+    },
+    {
+      "title": "Sleep is part of studying",
+      "text": "Memory is consolidated during sleep, so a late night before an exam trades away the thing you stayed up to build. A short review before bed and again in the morning uses this rather than fighting it."
+    },
+    {
+      "title": "Focused blocks",
+      "text": "Work in stretches of about 25 to 50 minutes with a real break between them. The break is not wasted time; it is when the previous block settles."
+    },
+    {
+      "title": "Spread it out",
+      "text": "Four one-hour sessions across four days beat one four-hour session for the same total time. Cramming can pass tomorrow's exam and will not survive to next month."
+    },
+    {
+      "title": "Teach it to check it",
+      "text": "Explain the topic out loud as if to someone who has never met it. The point where you stumble or reach for jargon is the point you do not actually understand."
+    },
+    {
+      "title": "Highlighting is weak on its own",
+      "text": "Marking a page requires no retrieval and leaves you with a colourful book you have not learned. If you highlight, turn each mark into a question afterwards."
+    },
+    {
+      "title": "Where you study",
+      "text": "A phone in the room costs attention even face down and unused. Leaving it in another room is more effective than intending to ignore it."
+    }
+  ]
+}

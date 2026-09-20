@@ -151,6 +151,17 @@ tables.set("txns", [
 
 for (const empty of ["notes", "chats", "quiz_results", "vectors", "settings"]) table(empty);
 
+type Metadata = { sourceId: string; kind: string; title: string; createdAt: string };
+
+/** A vectors row carries its source as a JSON blob; the app reads it with json_extract. */
+function readMetadata(row: Row): Metadata {
+  try {
+    return JSON.parse(String(row.metadata ?? "{}")) as Metadata;
+  } catch {
+    return { sourceId: "", kind: "", title: "", createdAt: "" };
+  }
+}
+
 /** The statement shapes the app issues, matched by keyword rather than parsed. */
 function run(sql: string, args: unknown[] = []): { rows: Row[] } {
   const text = sql.trim().replace(/\s+/g, " ");
@@ -172,7 +183,29 @@ function run(sql: string, args: unknown[] = []): { rows: Row[] } {
     if (/^SELECT\s+COUNT\(\*\)/i.test(text) && !/GROUP BY/i.test(text)) {
       return { rows: [{ n: rows.length }] };
     }
-    if (/GROUP BY/i.test(text)) return { rows: [] };
+    // listSources: one row per sourceId, counting its chunks. It used to
+    // answer empty, which was fine while a pack could only arrive over the
+    // network; now that the Library ships a catalogue, an empty answer would
+    // show every starter as never installed no matter how often you added it.
+    if (/GROUP BY/i.test(text)) {
+      const kind = String(args[0] ?? "");
+      const groups = new Map<string, Row>();
+      for (const row of rows) {
+        const meta = readMetadata(row);
+        if (meta.kind !== kind) continue;
+        const found = groups.get(meta.sourceId);
+        if (found) found.chunks = Number(found.chunks) + 1;
+        else {
+          groups.set(meta.sourceId, {
+            id: meta.sourceId,
+            title: meta.title,
+            createdAt: meta.createdAt,
+            chunks: 1,
+          });
+        }
+      }
+      return { rows: [...groups.values()] };
+    }
     const copy = [...rows];
     if (/ORDER BY\s+\w+\s+DESC/i.test(text)) {
       const key = /ORDER BY\s+(\w+)/i.exec(text)?.[1] ?? "at";
@@ -187,6 +220,13 @@ function run(sql: string, args: unknown[] = []): { rows: Row[] } {
   }
 
   if (/^DELETE/i.test(text)) {
+    if (/json_extract\(metadata/i.test(text)) {
+      tables.set(
+        name,
+        rows.filter((row) => !args.includes(readMetadata(row).sourceId))
+      );
+      return { rows: [] };
+    }
     const keep = /WHERE/i.test(text) ? rows.filter((row) => !args.includes(row.id)) : [];
     tables.set(name, keep);
     return { rows: [] };
@@ -265,6 +305,31 @@ export class RAG {
   }
   splitAddGenerate(): Promise<string> {
     return Promise.resolve(UNAVAILABLE);
+  }
+  /**
+   * Chunks on blank lines and writes a row each, with no embedding — enough
+   * for the Library to show a pack as installed and count its passages.
+   * Retrieval still answers empty, because there is no model to embed with.
+   */
+  splitAddDocument({
+    document,
+    metadataGenerator,
+  }: {
+    document: string;
+    metadataGenerator?: (chunks: string[]) => Record<string, unknown>[];
+  }): Promise<string[]> {
+    const chunks = document.split(/\n\s*\n/).filter((chunk) => chunk.trim() !== "");
+    const metadata = metadataGenerator?.(chunks) ?? chunks.map(() => ({}));
+    const ids = chunks.map((chunk, index) => {
+      const id = uuidv4();
+      void run("INSERT INTO vectors (id, content, metadata) VALUES (?, ?, ?)", [
+        id,
+        chunk,
+        JSON.stringify(metadata[index] ?? {}),
+      ]);
+      return id;
+    });
+    return Promise.resolve(ids);
   }
 }
 
