@@ -3,6 +3,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { Typography } from "heroui-native";
 import { useCallback, useMemo, useState, type JSX } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { G, Rect } from "react-native-svg";
 
 import { useConfirm } from "../../components/dialog";
@@ -19,7 +20,7 @@ import {
 } from "../../components/money";
 import { PlanPanel } from "../../components/plan-panel";
 import { RepeatEditor, RepeatsSheet } from "../../components/repeats";
-import { IconButton, PageHeader } from "../../components/screen";
+import { PageHeader } from "../../components/screen";
 import { DataGate, newNoteId, useAI } from "../../lib/ai";
 import {
   categoryOf,
@@ -30,6 +31,7 @@ import {
   monthlyRepeat,
   monthsEnding,
   netWorth,
+  netWorthChange,
   peso,
   totalsFor,
   ACCOUNT_TYPES,
@@ -200,6 +202,7 @@ function Budget(): JSX.Element {
   const router = useRouter();
   const palette = usePalette();
   const confirm = useConfirm();
+  const insets = useSafeAreaInsets();
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [txns, setTxns] = useState<Txn[]>([]);
@@ -258,6 +261,13 @@ function Budget(): JSX.Element {
   }, [live, txns]);
 
   const worth = useMemo(() => netWorth(live, txns), [live, txns]);
+
+  /**
+   * How it has moved since the first of the month. Null on a first run, and
+   * the percentage is dropped when there is no baseline to divide by — the
+   * amount is still true, so that is shown instead.
+   */
+  const moved = useMemo(() => netWorthChange(live, txns, month), [live, txns, month]);
 
   /**
    * Wallets in bands, each with its own subtotal.
@@ -477,13 +487,11 @@ function Budget(): JSX.Element {
 
   return (
     <View className="flex-1 bg-background">
-      <PageHeader
-        title="Money"
-        onBack={() => router.back()}
-        right={<IconButton name="add" label="Add" bordered onPress={() => setAdding(true)} />}
-      />
+      <PageHeader title="Money" onBack={() => router.back()} />
 
-      <ScrollView contentContainerClassName="px-4 pt-4 pb-10 gap-4">
+      {/* Room for the floating button to sit over, so the last row is never
+          stuck underneath it. */}
+      <ScrollView contentContainerClassName="px-4 pt-4 pb-28 gap-4">
         {/* The one saturated surface in the app. Money is the subject of this
             screen, so the headline carries the colour and everything below it
             stays quiet — one bold thing reads as emphasis, six read as noise. */}
@@ -497,16 +505,44 @@ function Budget(): JSX.Element {
                 to tell this screen from every other balance in the app. */}
             <Detective size={44} />
             <View className="flex-1">
-            <Text
-              style={{
-                color: palette.moneyForeground,
-                opacity: 0.75,
-                fontFamily: "Archivo_500Medium",
-                fontSize: 12,
-              }}
-            >
-              Net worth
-            </Text>
+            <View className="flex-row items-center gap-2">
+              <Text
+                style={{
+                  color: palette.moneyForeground,
+                  opacity: 0.75,
+                  fontFamily: "Archivo_500Medium",
+                  fontSize: 12,
+                }}
+              >
+                Net worth
+              </Text>
+              {/* Computed from the ledger, not a stored snapshot — see
+                  netWorthAt. Absent entirely until there is a month to compare
+                  against, rather than claiming a confident 0%. */}
+              {moved !== null && moved.delta !== 0 && (
+                <View
+                  className="flex-row items-center gap-0.5 rounded-full px-1.5 py-0.5"
+                  style={{ backgroundColor: "rgba(255,255,255,0.18)" }}
+                >
+                  <Ionicons
+                    name={moved.delta > 0 ? "arrow-up" : "arrow-down"}
+                    size={9.5}
+                    color={palette.moneyForeground}
+                  />
+                  <Text
+                    style={{
+                      color: palette.moneyForeground,
+                      fontFamily: "Archivo_600SemiBold",
+                      fontSize: 10,
+                    }}
+                  >
+                    {moved.share === null
+                      ? peso(Math.abs(moved.delta))
+                      : `${Math.abs(moved.share * 100).toFixed(1)}%`}
+                  </Text>
+                </View>
+              )}
+            </View>
             <Text
               style={{
                 color: palette.moneyForeground,
@@ -804,33 +840,28 @@ function Budget(): JSX.Element {
           />
         )}
 
-        {/* One door, not a row of them. Repeats and Plan became the two cards
-            above, and a lone tile padded out to a third of the width reads as
-            two missing buttons rather than one deliberate one. */}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Budget chat"
-          disabled={live.length === 0}
-          onPress={() => router.push("/budget/ask")}
-          className="flex-row items-center gap-3 rounded-2xl border border-border bg-surface p-3.5 active:bg-surface-tertiary"
-          style={{ opacity: live.length === 0 ? 0.45 : 1 }}
-        >
-          <View
-            className="h-9 w-9 items-center justify-center rounded-xl"
-            style={{ backgroundColor: `${palette.ask}22` }}
-          >
-            <Ionicons name="chatbubble-ellipses" size={17} color={palette.ask} />
-          </View>
-          <View className="flex-1">
-            <Typography.Paragraph className="font-ui-medium text-[14px]">Budget</Typography.Paragraph>
-            <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
-              Say what you spent and it files it
-            </Typography.Paragraph>
-          </View>
-          <Ionicons name="chevron-forward" size={15} color={palette.muted} />
-        </Pressable>
-
       </ScrollView>
+
+      {/* A thumb reaches the bottom corner; it does not reach the top one.
+          Everything behind this is something you *do*, which is what a
+          floating button is for — the header keeps only Back. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Add"
+        onPress={() => setAdding(true)}
+        className="absolute right-5 h-14 w-14 items-center justify-center rounded-full active:opacity-85"
+        style={{
+          bottom: insets.bottom + 20,
+          backgroundColor: palette.accent,
+          shadowColor: "#000",
+          shadowOpacity: 0.3,
+          shadowRadius: 12,
+          shadowOffset: { width: 0, height: 6 },
+          elevation: 8,
+        }}
+      >
+        <Ionicons name="add" size={26} color={palette.accentForeground} />
+      </Pressable>
 
       {adding && <ActionSheet actions={actions} onClose={() => setAdding(false)} />}
       {repeatsOpen && (

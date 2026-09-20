@@ -16,6 +16,8 @@ import {
   monthsEnding,
   movementOn,
   netWorth,
+  netWorthAt,
+  netWorthChange,
   openingFor,
   parseAmount,
   peso,
@@ -448,5 +450,56 @@ assert.deepEqual(monthlyRepeat([]), { outgoing: 0, incoming: 0 });
 // Still integer centavos after the division — a rate that drifts a fraction is
 // a rate that stops adding up.
 assert.ok(Number.isInteger(monthlyRepeat([domain]).outgoing));
+
+/* ------------------------------------------------ net worth over time --- */
+
+// The whole reason no history table is needed: an opening balance is what was
+// there before the first row, so replaying only the rows up to a date gives
+// the position as it stood then.
+const history: Txn[] = [
+  txn({ kind: "income", amount: 1_000_000, accountId: "g", at: "2026-08-10T00:00:00.000Z" }),
+  txn({ kind: "expense", amount: 200_000, accountId: "g", category: "food", at: "2026-08-20T00:00:00.000Z" }),
+  txn({ kind: "income", amount: 500_000, accountId: "g", at: "2026-09-05T00:00:00.000Z" }),
+];
+const septStart = "2026-09-01T00:00:00.000Z";
+
+// Before anything happened at all.
+assert.equal(netWorthAt([gcash], history, "2026-08-01T00:00:00.000Z"), 500_000);
+// After August, before September.
+assert.equal(netWorthAt([gcash], history, septStart), 500_000 + 1_000_000 - 200_000);
+// And "now" is just the whole ledger.
+assert.equal(netWorthAt([gcash], history, "2099-01-01T00:00:00.000Z"), netWorth([gcash], history));
+
+const moved = netWorthChange([gcash], history, "2026-09");
+assert.ok(moved);
+assert.equal(moved.from, 1_300_000, "where it stood on 1 September");
+assert.equal(moved.delta, 500_000, "September's income");
+assert.equal(moved.now, moved.from + moved.delta);
+assert.ok(Math.abs(moved.share! - 500_000 / 1_300_000) < 1e-9);
+
+// A transaction dated exactly at the boundary belongs to the new month, not
+// the baseline — otherwise the first day of a month never counts as movement.
+const onTheFirst = [...history, txn({ kind: "income", amount: 100_000, accountId: "g", at: septStart })];
+assert.equal(netWorthChange([gcash], onTheFirst, "2026-09")!.delta, 600_000);
+
+// Nothing recorded before this month is no history, not a flat month. A first
+// run must show nothing rather than a confident "0%".
+assert.equal(netWorthChange([gcash], [history[2]], "2026-09"), null);
+assert.equal(netWorthChange([gcash], [], "2026-09"), null);
+
+// Starting from zero makes every gain infinite; starting from a debt makes a
+// recovery read as a loss. Both report no percentage rather than a wrong one.
+const fromNothing: Account = { id: "z", name: "New", type: "cash", openingBalance: 0 };
+const zeroStart = netWorthChange(
+  [fromNothing],
+  [
+    txn({ kind: "expense", amount: 0, accountId: "z", at: "2026-08-31T00:00:00.000Z" }),
+    txn({ kind: "income", amount: 400_000, accountId: "z", at: "2026-09-02T00:00:00.000Z" }),
+  ],
+  "2026-09"
+);
+assert.ok(zeroStart);
+assert.equal(zeroStart.share, null, "no baseline to divide by");
+assert.equal(zeroStart.delta, 400_000, "but the amount is still true");
 
 console.log("budget: all checks passed");

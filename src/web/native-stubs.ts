@@ -123,6 +123,30 @@ tables.set("txns", [
     note: null,
     at: daysAgo(9),
   },
+  // Last month, so the preview has a position to have moved *from* — without
+  // one the net-worth badge correctly shows nothing and cannot be looked at.
+  {
+    id: "t8",
+    kind: "income",
+    amount: 2_900_000,
+    accountId: "w3",
+    toAccountId: null,
+    category: null,
+    source: "salary",
+    note: null,
+    at: daysAgo(40),
+  },
+  {
+    id: "t9",
+    kind: "expense",
+    amount: 860_000,
+    accountId: "w3",
+    toAccountId: null,
+    category: "housing",
+    source: null,
+    note: "Rent",
+    at: daysAgo(38),
+  },
 ]);
 
 for (const empty of ["notes", "chats", "quiz_results", "vectors", "settings"]) table(empty);

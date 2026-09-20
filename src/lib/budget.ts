@@ -152,9 +152,10 @@ export function categoryOf(category: Category | undefined): { label: string; ico
  * Every category worth offering: the shipped ones, then any the owner has
  * already used, so a category invented once can be picked again.
  */
-export function categoriesInUse(
-  used: readonly { category?: Category }[]
-): { known: KnownCategory[]; own: string[] } {
+export function categoriesInUse(used: readonly { category?: Category }[]): {
+  known: KnownCategory[];
+  own: string[];
+} {
   const shipped = new Set<string>(Object.keys(CATEGORIES));
   const own = new Set<string>();
   for (const row of used) {
@@ -245,6 +246,68 @@ export function netWorth(accounts: readonly Account[], txns: readonly Txn[]): Ce
       const balance = balanceOf(account, txns);
       return total + (account.type === "credit" ? -Math.abs(balance) : balance);
     }, 0);
+}
+
+/**
+ * What net worth was at a moment in the past.
+ *
+ * No stored history is needed, and none is kept: an opening balance is what
+ * was there before the first recorded transaction, so replaying only the rows
+ * dated up to `at` gives the balance as it stood then. That is the whole point
+ * of deriving balances rather than storing them.
+ *
+ * ISO-8601 sorts lexicographically, so the comparison is a string compare and
+ * needs no date parsing per row.
+ *
+ * One honest consequence: correcting a wallet's balance today moves the whole
+ * series, because it says the earlier record was wrong. That is what a
+ * correction means.
+ */
+export function netWorthAt(
+  accounts: readonly Account[],
+  txns: readonly Txn[],
+  at: string
+): Centavos {
+  return netWorth(
+    accounts,
+    txns.filter((txn) => txn.at < at)
+  );
+}
+
+export type Change = {
+  /** Where it stood at the start of the month. */
+  from: Centavos;
+  now: Centavos;
+  delta: Centavos;
+  /**
+   * Fraction of the starting figure, or null when there is nothing to divide
+   * by. Starting from zero makes every gain infinite, and starting from a debt
+   * makes a recovery read as a loss — both are worse than showing no
+   * percentage at all.
+   */
+  share: number | null;
+};
+
+/**
+ * How net worth has moved since the start of the month.
+ *
+ * Returns null when there is no history to compare against, so a first run
+ * shows nothing rather than a confident "0%".
+ */
+export function netWorthChange(
+  accounts: readonly Account[],
+  txns: readonly Txn[],
+  month: string
+): Change | null {
+  const start = `${month}-01T00:00:00.000Z`;
+  // Nothing was recorded before this month, so there is no earlier position to
+  // have moved from — only an opening balance, which is not a gain.
+  if (!txns.some((txn) => txn.at < start)) return null;
+
+  const from = netWorthAt(accounts, txns, start);
+  const now = netWorth(accounts, txns);
+  const delta = now - from;
+  return { from, now, delta, share: from > 0 ? delta / from : null };
 }
 
 /* -------------------------------------------------------------- periods --- */
