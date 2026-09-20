@@ -19,7 +19,7 @@ import {
 } from "../../components/money";
 import { PlanPanel } from "../../components/plan-panel";
 import { RepeatEditor, RepeatsSheet } from "../../components/repeats";
-import { Mascot, PageHeader } from "../../components/screen";
+import { Mascot, PageHeader, stagger } from "../../components/screen";
 import { DataGate, newNoteId, useAI } from "../../lib/ai";
 import {
   categoryOf,
@@ -491,6 +491,10 @@ function Budget(): JSX.Element {
       {/* Room for the floating button to sit over, so the last row is never
           stuck underneath it. */}
       <ScrollView contentContainerClassName="px-4 pt-4 pb-28 gap-4">
+        {/* Same arrival as every other page. This screen scrolls itself
+            rather than going through Screen, so it asks for it. */}
+        {stagger(
+          <>
         {/* The one saturated surface in the app. Money is the subject of this
             screen, so the headline carries the colour and everything below it
             stays quiet — one bold thing reads as emphasis, six read as noise. */}
@@ -839,6 +843,9 @@ function Budget(): JSX.Element {
           />
         )}
 
+          </>,
+          0
+        )}
       </ScrollView>
 
       {/* A thumb reaches the bottom corner; it does not reach the top one.

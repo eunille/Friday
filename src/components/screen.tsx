@@ -1,7 +1,25 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Typography } from "heroui-native";
-import { useState, type ComponentProps, type JSX, type ReactNode } from "react";
+import { useFocusEffect } from "expo-router";
+import {
+  Children,
+  Fragment,
+  isValidElement,
+  useCallback,
+  useEffect,
+  useState,
+  type ComponentProps,
+  type JSX,
+  type ReactNode,
+} from "react";
 import { Image, Pressable, ScrollView, View } from "react-native";
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { TIERS, useAI } from "../lib/ai";
@@ -61,9 +79,92 @@ export function IconButton({
  * keyboard's height as bottom padding, so the field you are typing into can
  * always be scrolled into view.
  */
+/** Between one card arriving and the next. */
+const STEP = 55;
+/** After this many, they all arrive together — a long page should not take a
+    second and a half to finish appearing. */
+const LAST = 6;
+
+/**
+ * One card, arriving.
+ *
+ * Hand-rolled rather than reanimated's `entering`, because this is the same
+ * shape the opening's wordmark already uses and that is known to work on every
+ * platform this ships to, web included.
+ *
+ * `visit` is what makes it replay. A tab stays mounted under whatever is
+ * pushed over it, so a mount-only animation would play once per app launch and
+ * never again — which is not what navigating to a page looks like.
+ */
+function Reveal({
+  delay,
+  visit,
+  children,
+}: {
+  delay: number;
+  visit: number;
+  children: ReactNode;
+}): JSX.Element {
+  const show = useSharedValue(0);
+
+  useEffect(() => {
+    show.value = 0;
+    show.value = withDelay(
+      delay,
+      withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) })
+    );
+  }, [show, delay, visit]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: show.value,
+    // Up into place, not down: content settling upward reads as arriving,
+    // content settling downward reads as falling.
+    transform: [{ translateY: 14 * (1 - show.value) }],
+  }));
+
+  return <Animated.View style={style}>{children}</Animated.View>;
+}
+
+/**
+ * Wraps each child so the page assembles itself instead of appearing whole.
+ *
+ * Lives here rather than in nine screens: every page built out of Screen or
+ * PageScroll gets it, and none of them had to know. A child that is not an
+ * element — the `false` a conditional leaves behind — passes straight through,
+ * because wrapping it would add an empty row to the container's gap.
+ */
+export function stagger(children: ReactNode, visit: number): ReactNode {
+  // A lone fragment is how a caller hands over a list from inside JSX. Stagger
+  // what is in it, or the whole page arrives as one block and the helper looks
+  // like it did nothing.
+  const list =
+    isValidElement(children) && children.type === Fragment
+      ? (children.props as { children?: ReactNode }).children
+      : children;
+
+  return Children.map(list, (child, index) =>
+    isValidElement(child) ? (
+      <Reveal delay={Math.min(index, LAST) * STEP} visit={visit}>
+        {child}
+      </Reveal>
+    ) : (
+      child
+    )
+  );
+}
+
 export function Screen({ children }: { children: ReactNode }): JSX.Element {
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardHeight();
+
+  // Bumped every time the screen comes into view, which is what restarts the
+  // stagger. Counting rather than toggling, so two visits in a row differ.
+  const [visit, setVisit] = useState(0);
+  useFocusEffect(
+    useCallback(() => {
+      setVisit((count) => count + 1);
+    }, [])
+  );
 
   return (
     <ScrollView
@@ -76,7 +177,7 @@ export function Screen({ children }: { children: ReactNode }): JSX.Element {
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
     >
-      {children}
+      {stagger(children, visit)}
     </ScrollView>
   );
 }
@@ -100,7 +201,9 @@ export function PageScroll({ children }: { children: ReactNode }): JSX.Element {
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
     >
-      {children}
+      {/* No visit counter: a pushed page unmounts when you leave it, so its
+          children are new every time anyway. */}
+      {stagger(children, 0)}
     </ScrollView>
   );
 }

@@ -53,6 +53,9 @@ function Themed(): JSX.Element {
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: background },
+          // A push that cuts reads as the app replacing itself; a push that
+          // slides reads as going somewhere and keeps the back gesture legible.
+          animation: "slide_from_right",
         }}
       >
         <Stack.Screen name="(tabs)" />
