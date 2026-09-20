@@ -1,4 +1,4 @@
-# Offline AI
+# Friday
 
 A note-taking app with a language model living inside it. You write notes, it answers
 questions about them, summarises them, quizzes you on them, and reads the nutrition panel
@@ -10,13 +10,17 @@ no server. After the first run it works in airplane mode.
 </p>
 
 <p align="center">
-  <b><a href="https://github.com/eunille/mobile-ai/releases/latest/download/offline-ai.apk">Download for Android</a></b><br />
-  <sub>Scan the code with an Android phone, or use the link. 246 MB.</sub>
+  <b><a href="https://github.com/eunille/Friday/releases/download/1.3.0/Friday-1.3.0.apk">Download for Android</a></b><br />
+  <sub>Scan the code with an Android phone, or use the link. 101 MB, v1.3.0.</sub>
 </p>
 
 > Android will warn that this is from an unknown developer. That is expected — the app is
 > signed for direct install rather than distributed through the Play Store. iOS is not
 > supported: Apple does not allow sideloading this way.
+>
+> Already have an older build? Uninstall it first. Every release so far carries the same
+> internal version number, and Android refuses to install over a copy it cannot tell is
+> newer.
 
 ## The first run
 
