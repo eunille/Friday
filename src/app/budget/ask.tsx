@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Typography } from "heroui-native";
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
+import { useCallback, useMemo, useRef, useState, type JSX } from "react";
 import { Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -187,7 +187,11 @@ function Ask(): JSX.Element {
     void listTxns(db).then(setTxns);
   }, [db]);
 
-  useEffect(refresh, [refresh]);
+  // On focus, not just on mount. Pushed screens stay mounted underneath, so a
+  // balance read once at mount still showed the old number after logging
+  // something in Ask and coming back — the screen had never been told to look
+  // again.
+  useFocusEffect(refresh);
 
   const live = useMemo(() => accounts.filter((account) => !account.archived), [accounts]);
 

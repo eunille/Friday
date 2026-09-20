@@ -38,11 +38,11 @@ function daysAgo(days: number): string {
  * empty states. Invented figures — nobody should mistake these for real money.
  */
 tables.set("accounts", [
-  { id: "w1", name: "GCash", type: "gcash", openingBalance: 570_000, archived: 0 },
-  { id: "w2", name: "Maya", type: "maya", openingBalance: 318_000, archived: 0 },
-  { id: "w3", name: "BPI Savings", type: "bpi", openingBalance: 1_995_000, archived: 0 },
-  { id: "w4", name: "MariBank", type: "maribank", openingBalance: 840_000, archived: 0 },
-  { id: "w5", name: "Cash", type: "cash", openingBalance: 120_000, archived: 0 },
+  { id: "w1", name: "Everyday", type: "gcash", openingBalance: 570_000, archived: 0 },
+  { id: "w2", name: "Bills", type: "maya", openingBalance: 318_000, archived: 0 },
+  { id: "w3", name: "Ipon", type: "bpi", openingBalance: 1_995_000, archived: 0 },
+  { id: "w4", name: "Emergency", type: "maribank", openingBalance: 840_000, archived: 0 },
+  { id: "w5", name: "Pocket", type: "cash", openingBalance: 120_000, archived: 0 },
 ]);
 
 tables.set("txns", [

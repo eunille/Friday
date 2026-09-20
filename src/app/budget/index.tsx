@@ -1,33 +1,35 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Typography } from "heroui-native";
-import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { useCallback, useMemo, useState, type JSX } from "react";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import Svg, { G, Rect } from "react-native-svg";
 
 import { useConfirm } from "../../components/dialog";
+import {
+  ActionSheet,
+  Chip,
+  TxnEditor,
+  TxnRow,
+  WalletCard,
+  WalletEditor,
+  type Action,
+} from "../../components/money";
 import { IconButton, PageHeader } from "../../components/screen";
 import { DataGate, newNoteId, useAI } from "../../lib/ai";
 import {
-  ACCOUNT_TYPES,
   CATEGORIES,
-  INCOME_SOURCES,
   balanceOf,
   byCategory,
   monthKey,
   monthsEnding,
   netWorth,
-  parseAmount,
   peso,
   totalsFor,
   type Account,
-  type AccountType,
-  type Category,
-  type IncomeSource,
   type Txn,
   type TxnKind,
 } from "../../lib/budget";
-import { relativeDate } from "../../lib/formats";
 import {
   countTxns,
   deleteAccount,
@@ -39,15 +41,12 @@ import {
 } from "../../lib/ledger";
 import { usePalette } from "../../lib/theme";
 
-const KINDS: { kind: TxnKind; label: string }[] = [
-  { kind: "expense", label: "Expense" },
-  { kind: "income", label: "Income" },
-  { kind: "transfer", label: "Transfer" },
+const FILTERS: { key: "all" | TxnKind; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "expense", label: "Expense" },
+  { key: "income", label: "Income" },
+  { key: "transfer", label: "Transfer" },
 ];
-
-const CATEGORY_KEYS = Object.keys(CATEGORIES) as Category[];
-const WALLET_TYPES = Object.keys(ACCOUNT_TYPES) as AccountType[];
-const SOURCE_KEYS = Object.keys(INCOME_SOURCES) as IncomeSource[];
 
 /**
  * In against out, six months, drawn small.
@@ -140,510 +139,28 @@ function Split({ txns, month }: { txns: readonly Txn[]; month: string }): JSX.El
   );
 }
 
-/**
- * One wallet, as a card you can swipe past.
- *
- * Brand colour, white type: you find GCash by its blue rather than by reading
- * five labels. These are the only saturated things on the screen apart from the
- * balance above them.
- */
-function WalletCard({
-  account,
-  balance,
-  onPress,
-}: {
-  account: Account;
-  balance: number;
-  onPress: () => void;
-}): JSX.Element {
-  const brand = ACCOUNT_TYPES[account.type];
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${account.name}, ${peso(balance)}`}
-      onPress={onPress}
-      className="h-[92px] w-[150px] justify-between rounded-[18px] p-3 active:opacity-85"
-      style={{ backgroundColor: brand.colour }}
-    >
-      <View className="flex-row items-center gap-1.5">
-        <View className="h-5 w-5 items-center justify-center rounded-md bg-white/25">
-          <Text style={{ color: "#fff", fontFamily: "Archivo_600SemiBold", fontSize: 10 }}>
-            {account.name.slice(0, 1).toUpperCase()}
-          </Text>
-        </View>
-        <Text
-          numberOfLines={1}
-          style={{ flex: 1, color: "#fff", fontFamily: "Archivo_600SemiBold", fontSize: 12.5 }}
-        >
-          {account.name}
-        </Text>
-      </View>
-      <Text style={{ color: "#fff", fontFamily: "Archivo_600SemiBold", fontSize: 16 }}>
-        {peso(balance)}
-      </Text>
-    </Pressable>
-  );
-}
-
-/** Add and edit are the same three fields, so they are the same sheet. */
-function WalletEditor({
-  draft,
-  onChange,
-  onClose,
-  onSave,
-  onDelete,
-}: {
-  draft: Account;
-  onChange: (next: Account) => void;
-  onClose: () => void;
-  onSave: () => void;
-  onDelete: () => void;
-}): JSX.Element {
-  const palette = usePalette();
-
-  // Seeded once, never synced back. The caller remounts this per wallet, so an
-  // effect mirroring `draft` would re-run on every keystroke and rewrite what is
-  // being typed — "250." would become "250" under the cursor.
-  const [amount, setAmount] = useState(() =>
-    draft.openingBalance === 0 ? "" : String(draft.openingBalance / 100)
-  );
-  const existing = draft.name.trim() !== "";
-
-  return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" }}>
-        <View className="gap-4 rounded-t-[26px] border border-border bg-surface p-5 pb-8">
-          <View className="flex-row items-center justify-between">
-            <Typography.Heading type="h2" className="font-ui-bold text-[19px]">
-              {existing ? "Edit wallet" : "New wallet"}
-            </Typography.Heading>
-            <IconButton name="close" label="Close" tone="muted" onPress={onClose} />
-          </View>
-
-          <TextInput
-            value={draft.name}
-            onChangeText={(name) => onChange({ ...draft, name })}
-            placeholder="Wallet name"
-            placeholderTextColor={palette.muted}
-            className="rounded-xl border border-border bg-background px-3.5 py-3 font-ui text-[15px] text-foreground"
-          />
-
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="-mx-1">
-            <View className="flex-row gap-2 px-1">
-              {WALLET_TYPES.map((type) => {
-                const brand = ACCOUNT_TYPES[type];
-                const on = draft.type === type;
-                return (
-                  <Pressable
-                    key={type}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: on }}
-                    onPress={() =>
-                      onChange({
-                        ...draft,
-                        type,
-                        // An untouched name follows the type, so picking GCash
-                        // fills in "GCash" and most wallets need no typing.
-                        name: draft.name.trim() === "" ? brand.label : draft.name,
-                      })
-                    }
-                    className="min-h-[36px] justify-center rounded-full border px-3.5"
-                    style={{
-                      backgroundColor: on ? brand.colour : "transparent",
-                      borderColor: on ? brand.colour : palette.border,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontFamily: "Archivo_600SemiBold",
-                        fontSize: 12.5,
-                        color: on ? "#fff" : palette.muted,
-                      }}
-                    >
-                      {brand.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </ScrollView>
-
-          <View className="gap-1.5">
-            <TextInput
-              value={amount}
-              onChangeText={(text) => {
-                setAmount(text);
-                onChange({ ...draft, openingBalance: parseAmount(text) ?? 0 });
-              }}
-              keyboardType="decimal-pad"
-              placeholder="Starting balance"
-              placeholderTextColor={palette.muted}
-              className="rounded-xl border border-border bg-background px-3.5 py-3 font-ui text-[15px] text-foreground"
-            />
-            <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
-              What is in it right now. Everything you log from here moves it.
-            </Typography.Paragraph>
-          </View>
-
-          <View className="flex-row gap-2">
-            {existing && (
-              <Pressable
-                accessibilityRole="button"
-                onPress={onDelete}
-                className="min-h-[46px] justify-center rounded-full border border-border px-4 active:opacity-70"
-              >
-                <Text
-                  style={{ fontFamily: "Archivo_600SemiBold", fontSize: 14, color: palette.danger }}
-                >
-                  Delete
-                </Text>
-              </Pressable>
-            )}
-            <Pressable
-              accessibilityRole="button"
-              disabled={!existing}
-              onPress={onSave}
-              className="min-h-[46px] flex-1 items-center justify-center rounded-full active:opacity-80"
-              style={{ backgroundColor: palette.accent, opacity: existing ? 1 : 0.4 }}
-            >
-              <Text
-                style={{
-                  fontFamily: "Archivo_600SemiBold",
-                  fontSize: 14,
-                  color: palette.accentForeground,
-                }}
-              >
-                Save
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-/** A fresh expense, dated now, against whichever account comes first. */
-function blank(accountId: string): Txn {
-  return {
-    id: newNoteId(),
-    kind: "expense",
-    amount: 0,
-    accountId,
-    category: "food",
-    at: new Date().toISOString(),
-  };
-}
-
-function Chip({
+/** One figure in the hero, with its arrow. */
+function HeroStat({
+  icon,
   label,
-  on,
-  tint,
-  onPress,
+  value,
+  colour,
 }: {
+  icon: string;
   label: string;
-  on: boolean;
-  tint?: string;
-  onPress: () => void;
+  value: number;
+  colour: string;
 }): JSX.Element {
-  const palette = usePalette();
-  const colour = tint ?? palette.accent;
-
   return (
-    <Pressable
-      accessibilityRole="radio"
-      accessibilityState={{ selected: on }}
-      onPress={onPress}
-      className="min-h-[36px] justify-center rounded-full border px-3.5"
-      style={{
-        backgroundColor: on ? colour : "transparent",
-        borderColor: on ? colour : palette.border,
-      }}
-    >
-      <Text
-        style={{
-          fontFamily: "Archivo_600SemiBold",
-          fontSize: 12.5,
-          color: on ? (tint ? "#fff" : palette.accentForeground) : palette.muted,
-        }}
-      >
+    <View className="flex-row items-center gap-1.5">
+      <Ionicons name={icon as never} size={13} color={colour} style={{ opacity: 0.75 }} />
+      <Text style={{ color: colour, fontFamily: "Archivo_600SemiBold", fontSize: 14 }}>
+        {peso(value)}
+      </Text>
+      <Text style={{ color: colour, opacity: 0.7, fontFamily: "Archivo_400Regular", fontSize: 12 }}>
         {label}
       </Text>
-    </Pressable>
-  );
-}
-
-/**
- * Add or edit one transaction.
- *
- * Transfer swaps the category row for a second account picker, because a
- * transfer has no category — it is not spending, and offering one would invite
- * filing money you still have under Food.
- */
-function Editor({
-  draft,
-  accounts,
-  onChange,
-  onClose,
-  onSave,
-  onDelete,
-}: {
-  draft: Txn;
-  accounts: readonly Account[];
-  onChange: (next: Txn) => void;
-  onClose: () => void;
-  onSave: () => void;
-  onDelete: () => void;
-}): JSX.Element {
-  const palette = usePalette();
-
-  // Seeded once, never synced back. An effect mirroring `draft` would re-run on
-  // every keystroke and rewrite what is being typed.
-  const [amount, setAmount] = useState(() =>
-    draft.amount === 0 ? "" : String(draft.amount / 100)
-  );
-  const editing = draft.amount > 0;
-
-  const parsed = parseAmount(amount);
-  const valid =
-    parsed !== null &&
-    parsed > 0 &&
-    (draft.kind !== "transfer" || (!!draft.toAccountId && draft.toAccountId !== draft.accountId));
-
-  return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" }}>
-        <ScrollView
-          className="max-h-[88%] rounded-t-[26px] border border-border bg-surface"
-          contentContainerClassName="p-5 pb-8 gap-4"
-          keyboardShouldPersistTaps="handled"
-        >
-          <View className="flex-row items-center justify-between">
-            <Typography.Heading type="h2" className="font-ui-bold text-[19px]">
-              {editing ? "Edit transaction" : "New transaction"}
-            </Typography.Heading>
-            <IconButton name="close" label="Close" tone="muted" onPress={onClose} />
-          </View>
-
-          <View className="flex-row gap-2">
-            {KINDS.map(({ kind, label }) => (
-              <Chip
-                key={kind}
-                label={label}
-                on={draft.kind === kind}
-                onPress={() =>
-                  onChange({
-                    ...draft,
-                    kind,
-                    // Each kind carries a different third field, so the other
-                    // two are cleared rather than left to be written to the row.
-                    category: kind === "expense" ? (draft.category ?? "food") : undefined,
-                    source: kind === "income" ? (draft.source ?? "salary") : undefined,
-                    toAccountId: kind === "transfer" ? draft.toAccountId : undefined,
-                  })
-                }
-              />
-            ))}
-          </View>
-
-          <TextInput
-            value={amount}
-            onChangeText={(text) => {
-              setAmount(text);
-              onChange({ ...draft, amount: parseAmount(text) ?? 0 });
-            }}
-            keyboardType="decimal-pad"
-            autoFocus
-            placeholder="0.00"
-            placeholderTextColor={palette.muted}
-            className="rounded-xl border border-border bg-background px-3.5 py-3 font-ui-bold text-[26px] text-foreground"
-          />
-
-          <View className="gap-2">
-            <Typography.Paragraph className="font-ui-medium text-muted text-[12px]">
-              {draft.kind === "transfer" ? "From" : "Account"}
-            </Typography.Paragraph>
-            <View className="flex-row flex-wrap gap-2">
-              {accounts.map((account) => (
-                <Chip
-                  key={account.id}
-                  label={account.name}
-                  tint={ACCOUNT_TYPES[account.type].colour}
-                  on={draft.accountId === account.id}
-                  onPress={() => onChange({ ...draft, accountId: account.id })}
-                />
-              ))}
-            </View>
-          </View>
-
-          {draft.kind === "transfer" ? (
-            <View className="gap-2">
-              <Typography.Paragraph className="font-ui-medium text-muted text-[12px]">
-                To
-              </Typography.Paragraph>
-              <View className="flex-row flex-wrap gap-2">
-                {accounts
-                  .filter((account) => account.id !== draft.accountId)
-                  .map((account) => (
-                    <Chip
-                      key={account.id}
-                      label={account.name}
-                      tint={ACCOUNT_TYPES[account.type].colour}
-                      on={draft.toAccountId === account.id}
-                      onPress={() => onChange({ ...draft, toAccountId: account.id })}
-                    />
-                  ))}
-              </View>
-            </View>
-          ) : (
-            <View className="gap-2">
-              <Typography.Paragraph className="font-ui-medium text-muted text-[12px]">
-                {draft.kind === "income" ? "Source" : "Category"}
-              </Typography.Paragraph>
-              <View className="flex-row flex-wrap gap-2">
-                {draft.kind === "income"
-                  ? SOURCE_KEYS.map((source) => (
-                      <Chip
-                        key={source}
-                        label={INCOME_SOURCES[source].label}
-                        on={draft.source === source}
-                        onPress={() => onChange({ ...draft, source })}
-                      />
-                    ))
-                  : CATEGORY_KEYS.map((category) => (
-                      <Chip
-                        key={category}
-                        label={CATEGORIES[category].label}
-                        on={draft.category === category}
-                        onPress={() => onChange({ ...draft, category })}
-                      />
-                    ))}
-              </View>
-            </View>
-          )}
-
-          <TextInput
-            value={draft.note ?? ""}
-            onChangeText={(note) => onChange({ ...draft, note })}
-            placeholder="Note (optional)"
-            placeholderTextColor={palette.muted}
-            className="rounded-xl border border-border bg-background px-3.5 py-3 font-ui text-[15px] text-foreground"
-          />
-
-          <View className="flex-row gap-2">
-            {editing && (
-              <Pressable
-                accessibilityRole="button"
-                onPress={onDelete}
-                className="min-h-[46px] justify-center rounded-full border border-border px-4 active:opacity-70"
-              >
-                <Text
-                  style={{ fontFamily: "Archivo_600SemiBold", fontSize: 14, color: palette.danger }}
-                >
-                  Delete
-                </Text>
-              </Pressable>
-            )}
-            <Pressable
-              accessibilityRole="button"
-              disabled={!valid}
-              onPress={onSave}
-              className="min-h-[46px] flex-1 items-center justify-center rounded-full active:opacity-80"
-              style={{ backgroundColor: palette.accent, opacity: valid ? 1 : 0.4 }}
-            >
-              <Text
-                style={{
-                  fontFamily: "Archivo_600SemiBold",
-                  fontSize: 14,
-                  color: palette.accentForeground,
-                }}
-              >
-                Save
-              </Text>
-            </Pressable>
-          </View>
-        </ScrollView>
-      </View>
-    </Modal>
-  );
-}
-
-/** One line in the ledger. */
-function Row({
-  txn,
-  accounts,
-  onPress,
-  first,
-}: {
-  txn: Txn;
-  accounts: readonly Account[];
-  onPress: () => void;
-  first: boolean;
-}): JSX.Element {
-  const palette = usePalette();
-  const from = accounts.find((account) => account.id === txn.accountId);
-  const to = accounts.find((account) => account.id === txn.toAccountId);
-
-  const title =
-    txn.kind === "transfer"
-      ? `${from?.name ?? "?"} → ${to?.name ?? "?"}`
-      : txn.kind === "income"
-        ? INCOME_SOURCES[txn.source ?? "other"].label
-        : CATEGORIES[txn.category ?? "other"].label;
-
-  const icon =
-    txn.kind === "transfer"
-      ? "swap-horizontal"
-      : txn.kind === "income"
-        ? "arrow-down"
-        : CATEGORIES[txn.category ?? "other"].icon;
-
-  const tint =
-    txn.kind === "transfer"
-      ? palette.muted
-      : txn.kind === "income"
-        ? palette.onDevice
-        : palette.foreground;
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${title}, ${peso(txn.amount)}`}
-      onPress={onPress}
-      className={`min-h-[58px] flex-row items-center gap-3 px-3.5 py-2.5 active:bg-surface-tertiary ${
-        first ? "" : "border-t border-border"
-      }`}
-    >
-      <View
-        className="h-9 w-9 items-center justify-center rounded-xl"
-        style={{ backgroundColor: from ? `${ACCOUNT_TYPES[from.type].colour}1A` : palette.border }}
-      >
-        <Ionicons
-          name={icon as never}
-          size={16}
-          color={from ? ACCOUNT_TYPES[from.type].colour : palette.muted}
-        />
-      </View>
-      <View className="flex-1">
-        <Typography.Paragraph className="font-ui-medium text-[14px]" numberOfLines={1}>
-          {txn.note?.trim() || title}
-        </Typography.Paragraph>
-        <Typography.Paragraph className="font-ui text-muted text-[11.5px]" numberOfLines={1}>
-          {/* A transfer already says both ends on the line above, so repeating
-              the route here would print it twice. */}
-          {relativeDate(txn.at)}
-          {txn.kind === "transfer" ? "" : ` · ${from?.name ?? "Unknown"}`}
-        </Typography.Paragraph>
-      </View>
-      {/* A transfer carries no sign: nothing was gained or lost, so either one
-          would be a lie about the total. */}
-      <Text style={{ fontFamily: "Archivo_600SemiBold", fontSize: 14.5, color: tint }}>
-        {txn.kind === "transfer"
-          ? peso(txn.amount)
-          : peso(txn.kind === "income" ? txn.amount : -txn.amount, { sign: true })}
-      </Text>
-    </Pressable>
+    </View>
   );
 }
 
@@ -657,6 +174,7 @@ function Budget(): JSX.Element {
   const [txns, setTxns] = useState<Txn[]>([]);
   const [draft, setDraft] = useState<Txn | null>(null);
   const [wallet, setWallet] = useState<Account | null>(null);
+  const [adding, setAdding] = useState(false);
   const [filter, setFilter] = useState<"all" | TxnKind>("all");
 
   const refresh = useCallback(() => {
@@ -665,7 +183,11 @@ function Budget(): JSX.Element {
     void listTxns(db).then(setTxns);
   }, [db]);
 
-  useEffect(refresh, [refresh]);
+  // On focus, not just on mount. Pushed screens stay mounted underneath, so a
+  // balance read once at mount still showed the old number after logging
+  // something in Ask and coming back — the screen had never been told to look
+  // again.
+  useFocusEffect(refresh);
 
   const live = useMemo(() => accounts.filter((account) => !account.archived), [accounts]);
   const month = monthKey(new Date().toISOString());
@@ -674,6 +196,40 @@ function Budget(): JSX.Element {
     () => (filter === "all" ? txns : txns.filter((txn) => txn.kind === filter)),
     [txns, filter]
   );
+
+  /**
+   * What you have, what you owe, and the difference.
+   *
+   * Kept apart rather than summed into one figure, because a card balance is
+   * money owed: adding it to the wallets would report a debt as savings. Net
+   * worth is the honest headline; held and owed are what explain it.
+   */
+  const { held, owed } = useMemo(() => {
+    let inHand = 0;
+    let onCards = 0;
+    for (const account of live) {
+      const balance = balanceOf(account, txns);
+      if (account.type === "credit") onCards += Math.abs(balance);
+      else inHand += balance;
+    }
+    return { held: inHand, owed: onCards };
+  }, [live, txns]);
+
+  const worth = useMemo(() => netWorth(live, txns), [live, txns]);
+
+  /** How many of the last six months have anything in them. */
+  const active = useMemo(
+    () =>
+      monthsEnding(month, 6).filter((key) => {
+        const totals = totalsFor(txns, key);
+        return totals.income > 0 || totals.expense > 0;
+      }).length,
+    [txns, month]
+  );
+
+  const startWallet = useCallback(() => {
+    setWallet({ id: newNoteId(), name: "", type: "gcash", openingBalance: 0 });
+  }, []);
 
   const saveWallet = useCallback(() => {
     if (!db || !wallet) return;
@@ -703,16 +259,6 @@ function Budget(): JSX.Element {
     });
   }, [db, wallet, confirm, refresh]);
 
-  /** How many of the last six months have anything in them. */
-  const active = useMemo(
-    () =>
-      monthsEnding(month, 6).filter((key) => {
-        const totals = totalsFor(txns, key);
-        return totals.income > 0 || totals.expense > 0;
-      }).length,
-    [txns, month]
-  );
-
   const commit = useCallback(() => {
     if (!db || !draft) return;
     void saveTxn(db, draft).then(() => {
@@ -734,32 +280,63 @@ function Budget(): JSX.Element {
     });
   }, [db, draft, confirm, refresh]);
 
+  /**
+   * Everything the + can start.
+   *
+   * The three that need a wallet to write against are left out until there is
+   * one rather than shown greyed: a disabled row still has to be read and ruled
+   * out, and on a first run every one of them would be.
+   */
+  const actions: Action[] = [
+    {
+      key: "wallet",
+      icon: "wallet",
+      label: "New wallet",
+      hint: "A bank, e-wallet, cash or card",
+      tint: palette.wallets,
+      onPress: startWallet,
+    },
+    ...(live.length > 0
+      ? [
+          {
+            key: "ask",
+            icon: "chatbubble-ellipses" as const,
+            label: "Log with Ask",
+            hint: "Type what you spent and it files it",
+            tint: palette.ask,
+            onPress: () => router.push("/budget/ask"),
+          },
+          {
+            key: "plan",
+            icon: "flag" as const,
+            label: "Budget or goal",
+            hint: "A monthly limit or a savings goal",
+            tint: palette.plan,
+            onPress: () => router.push("/budget/plan"),
+          },
+          {
+            key: "bills",
+            icon: "repeat" as const,
+            label: "Repeating bill",
+            hint: "Something that goes out every month",
+            tint: palette.warning,
+            onPress: () => router.push("/budget/bills"),
+          },
+        ]
+      : []),
+  ];
+
   return (
     <View className="flex-1 bg-background">
       <PageHeader
         title="Money"
         onBack={() => router.back()}
-        right={
-          <IconButton
-            name="add"
-            label="Add transaction"
-            bordered
-            disabled={live.length === 0}
-            // Read through a guard rather than as live[0].id inline. The React
-            // Compiler hoists that subexpression out of the closure and
-            // evaluates it during render, where `disabled` cannot protect it —
-            // so with no accounts yet the screen threw before it could draw.
-            onPress={() => {
-              const first = live[0];
-              if (first) setDraft(blank(first.id));
-            }}
-          />
-        }
+        right={<IconButton name="add" label="Add" bordered onPress={() => setAdding(true)} />}
       />
 
       <ScrollView contentContainerClassName="px-4 pt-4 pb-10 gap-4">
         {/* The one saturated surface in the app. Money is the subject of this
-            screen, so the balance carries the colour and everything below it
+            screen, so the headline carries the colour and everything below it
             stays quiet — one bold thing reads as emphasis, six read as noise. */}
         <View className="gap-3 rounded-[22px] p-4" style={{ backgroundColor: palette.money }}>
           <View>
@@ -771,7 +348,7 @@ function Budget(): JSX.Element {
                 fontSize: 12,
               }}
             >
-              Total balance
+              Net worth
             </Text>
             <Text
               style={{
@@ -781,42 +358,30 @@ function Budget(): JSX.Element {
                 letterSpacing: -0.5,
               }}
             >
-              {peso(netWorth(live, txns))}
+              {peso(worth)}
             </Text>
           </View>
           <View className="flex-row flex-wrap gap-x-5 gap-y-1">
-            {[
-              { icon: "arrow-down", label: "in this month", value: totals.income },
-              { icon: "arrow-up", label: "out this month", value: totals.expense },
-            ].map((item) => (
-              <View key={item.label} className="flex-row items-center gap-1.5">
-                <Ionicons
-                  name={item.icon as never}
-                  size={13}
-                  color={palette.moneyForeground}
-                  style={{ opacity: 0.75 }}
-                />
-                <Text
-                  style={{
-                    color: palette.moneyForeground,
-                    fontFamily: "Archivo_600SemiBold",
-                    fontSize: 14,
-                  }}
-                >
-                  {peso(item.value)}
-                </Text>
-                <Text
-                  style={{
-                    color: palette.moneyForeground,
-                    opacity: 0.7,
-                    fontFamily: "Archivo_400Regular",
-                    fontSize: 12,
-                  }}
-                >
-                  {item.label}
-                </Text>
-              </View>
-            ))}
+            {/* Only worth spelling out when a card makes them differ from the
+                headline. With no card, held is the headline again. */}
+            {owed > 0 && (
+              <>
+                <HeroStat icon="wallet" label="held" value={held} colour={palette.moneyForeground} />
+                <HeroStat icon="card" label="owed" value={owed} colour={palette.moneyForeground} />
+              </>
+            )}
+            <HeroStat
+              icon="arrow-down"
+              label="in this month"
+              value={totals.income}
+              colour={palette.moneyForeground}
+            />
+            <HeroStat
+              icon="arrow-up"
+              label="out this month"
+              value={totals.expense}
+              colour={palette.moneyForeground}
+            />
           </View>
         </View>
 
@@ -829,8 +394,6 @@ function Budget(): JSX.Element {
             <Typography.Heading type="h3" className="font-ui-bold text-[14px]">
               Wallets
             </Typography.Heading>
-            {/* Count only. The total sits in the hero directly above, and for
-                anyone without a credit card it is the identical number. */}
             {live.length > 0 && (
               <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
                 {live.length} wallet{live.length === 1 ? "" : "s"}
@@ -847,16 +410,19 @@ function Budget(): JSX.Element {
                   key={account.id}
                   account={account}
                   balance={balanceOf(account, txns)}
-                  onPress={() => setWallet(account)}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/budget/wallet/[id]",
+                      params: { id: account.id },
+                    })
+                  }
                 />
               ))}
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Add a wallet"
-                onPress={() =>
-                  setWallet({ id: newNoteId(), name: "", type: "gcash", openingBalance: 0 })
-                }
-                className="h-[92px] w-[110px] items-center justify-center gap-1.5 rounded-[18px] border border-border border-dashed active:bg-surface-tertiary"
+                onPress={startWallet}
+                className="h-[98px] w-[110px] items-center justify-center gap-1.5 rounded-[18px] border border-border border-dashed active:bg-surface-tertiary"
               >
                 <Ionicons name="add" size={20} color={palette.muted} />
                 <Text
@@ -961,24 +527,25 @@ function Budget(): JSX.Element {
         ) : (
           <>
             <View className="flex-row gap-2">
-              {(["all", "expense", "income", "transfer"] as const).map((key) => (
+              {FILTERS.map((option) => (
                 <Chip
-                  key={key}
-                  label={key === "all" ? "All" : (KINDS.find((k) => k.kind === key)?.label ?? key)}
-                  on={filter === key}
-                  onPress={() => setFilter(key)}
+                  key={option.key}
+                  label={option.label}
+                  on={filter === option.key}
+                  onPress={() => setFilter(option.key)}
                 />
               ))}
             </View>
 
             {shown.length === 0 ? (
               <Typography.Paragraph className="pt-4 text-center font-read text-muted text-[15px] leading-6">
-                Nothing logged yet. Tap + to record what you spent.
+                Nothing logged yet. Open Ask and type what you spent — &ldquo;250 lunch
+                gcash&rdquo; is enough.
               </Typography.Paragraph>
             ) : (
               <View className="overflow-hidden rounded-2xl border border-border bg-surface">
                 {shown.map((txn, index) => (
-                  <Row
+                  <TxnRow
                     key={txn.id}
                     txn={txn}
                     accounts={accounts}
@@ -992,8 +559,9 @@ function Budget(): JSX.Element {
         )}
       </ScrollView>
 
+      {adding && <ActionSheet actions={actions} onClose={() => setAdding(false)} />}
       {draft && (
-        <Editor
+        <TxnEditor
           key={draft.id}
           draft={draft}
           accounts={live}
@@ -1007,6 +575,8 @@ function Budget(): JSX.Element {
         <WalletEditor
           key={wallet.id}
           draft={wallet}
+          txns={txns}
+          isNew={!accounts.some((account) => account.id === wallet.id)}
           onChange={setWallet}
           onClose={() => setWallet(null)}
           onSave={saveWallet}

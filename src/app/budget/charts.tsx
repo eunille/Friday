@@ -1,6 +1,6 @@
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Typography } from "heroui-native";
-import { useCallback, useEffect, useMemo, useState, type JSX, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type JSX, type ReactNode } from "react";
 import { ScrollView, Text, View } from "react-native";
 import Svg, { Circle, G, Line, Path, Rect } from "react-native-svg";
 
@@ -299,7 +299,11 @@ function Charts(): JSX.Element {
     void listTxns(db).then(setTxns);
   }, [db]);
 
-  useEffect(refresh, [refresh]);
+  // On focus, not just on mount. Pushed screens stay mounted underneath, so a
+  // balance read once at mount still showed the old number after logging
+  // something in Ask and coming back — the screen had never been told to look
+  // again.
+  useFocusEffect(refresh);
 
   const month = monthKey(new Date().toISOString());
   const live = useMemo(() => accounts.filter((account) => !account.archived), [accounts]);

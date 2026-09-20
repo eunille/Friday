@@ -83,8 +83,13 @@ export type AccountType = keyof typeof ACCOUNT_TYPES;
 
 export type Account = {
   id: string;
-  name: string;
   type: AccountType;
+  /**
+   * The owner's own word for it: "Expenses", "Ipon", "Bills". Doubles as an
+   * alias for Ask — findAccount matches this or the type, so "food 250 from
+   * expenses" and "food 250 gcash" both land on the same wallet.
+   */
+  name: string;
   /** What was in it before the first recorded transaction. */
   openingBalance: Centavos;
   archived?: boolean;
@@ -159,6 +164,27 @@ export function balanceOf(account: Account, txns: readonly Txn[]): Centavos {
   return txns.reduce((total, txn) => total + effectOn(txn, account.id), account.openingBalance);
 }
 
+/** Everything logged against this account, signed. Balance minus opening. */
+export function movementOn(accountId: string, txns: readonly Txn[]): Centavos {
+  return txns.reduce((total, txn) => total + effectOn(txn, accountId), 0);
+}
+
+/**
+ * The opening balance this account needs for its balance to read `balance`.
+ *
+ * The editor asks what is in the wallet *right now* — the number you can check
+ * against the bank's own app. Writing that straight into openingBalance would
+ * silently re-add everything logged since, so the movement comes back out here.
+ * Balances stay derived; the field stays the one a person can verify.
+ */
+export function openingFor(
+  accountId: string,
+  txns: readonly Txn[],
+  balance: Centavos
+): Centavos {
+  return balance - movementOn(accountId, txns);
+}
+
 /**
  * Everything, added up. A credit card counts against you: a balance on one is
  * money owed, not money held.
@@ -210,6 +236,30 @@ export function totalsFor(txns: readonly Txn[], month: string): Totals {
     if (txn.kind === "expense") expense += txn.amount;
   }
   return { income, expense, net: income - expense };
+}
+
+/**
+ * What moved in and out of one account in a month.
+ *
+ * Transfers count here, unlike everywhere else. They are excluded from income
+ * and spending because moving your own money between wallets neither earns nor
+ * spends it — but from inside one wallet the money genuinely arrived or left,
+ * and a statement that omitted it would not reconcile against the balance.
+ */
+export function accountFlow(
+  accountId: string,
+  txns: readonly Txn[],
+  month: string
+): { inward: Centavos; outward: Centavos } {
+  let inward = 0;
+  let outward = 0;
+  for (const txn of txns) {
+    if (!inMonth(txn, month)) continue;
+    const effect = effectOn(txn, accountId);
+    if (effect > 0) inward += effect;
+    else outward -= effect;
+  }
+  return { inward, outward };
 }
 
 /** Spend per category for a month, biggest first, transfers excluded. */

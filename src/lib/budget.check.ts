@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import {
+  accountFlow,
   balanceOf,
   budgetStatus,
   byCategory,
@@ -10,7 +11,9 @@ import {
   goalForecast,
   monthsBetween,
   monthsEnding,
+  movementOn,
   netWorth,
+  openingFor,
   parseAmount,
   peso,
   pesoShort,
@@ -135,6 +138,64 @@ assert.equal(month.net, month.income - month.expense);
 
 // A credit card balance is money owed, so it pulls net worth down.
 assert.ok(netWorth([gcash, card], []) < netWorth([gcash], []));
+
+/* --------------------------------------------------- correcting a wallet --- */
+
+// The point of openingFor: the editor shows the balance a person can check
+// against their bank's own app, and typing a number in must leave exactly that
+// number — not re-add everything logged since the wallet was opened.
+for (const target of [500_000, 0, 1, -250_000]) {
+  const corrected = { ...gcash, openingBalance: openingFor("g", ledger, target) };
+  assert.equal(balanceOf(corrected, ledger), target, `correcting GCash to ${target}`);
+}
+
+// Saving without touching the amount must not move the balance. This is the
+// round trip that was broken: the field held the opening balance while the card
+// showed the real one, so re-saving quietly reset the wallet.
+const untouched = balanceOf(gcash, ledger);
+assert.equal(
+  balanceOf({ ...gcash, openingBalance: openingFor("g", ledger, untouched) }, ledger),
+  untouched,
+  "re-saving an unchanged balance is a no-op"
+);
+
+// A brand new wallet has no movement, so what you type is what you get.
+assert.equal(openingFor("fresh", ledger, 42_000), 42_000);
+assert.equal(movementOn("fresh", ledger), 0);
+
+// Movement is the transfer out plus both expenses — and it is exactly the gap
+// between opening and current, which is what makes the subtraction valid.
+assert.equal(movementOn("g", ledger), balanceOf(gcash, ledger) - gcash.openingBalance);
+assert.equal(movementOn("g", ledger), 200_000 - 25_000 - 7_000);
+
+/* ------------------------------------------------- one wallet's statement --- */
+
+// The transfer into GCash counts as money in here, though it is not income
+// anywhere else. From inside one wallet it genuinely arrived.
+const gFlow = accountFlow("g", ledger, "2026-09");
+assert.equal(gFlow.inward, 200_000, "the transfer in, which totalsFor deliberately ignores");
+assert.equal(gFlow.outward, 32_000, "both expenses");
+
+// And the other end of that same transfer is money out of BPI.
+const bFlow = accountFlow("b", ledger, "2026-09");
+assert.equal(bFlow.inward, 3_000_000, "salary only");
+assert.equal(bFlow.outward, 200_000, "the transfer out");
+
+// The whole point of including transfers: in minus out has to be the change in
+// the balance, or the statement would not reconcile against the number above it.
+assert.equal(
+  gFlow.inward - gFlow.outward,
+  movementOn("g", ledger),
+  "September holds every GCash row, so flow and movement must agree"
+);
+
+// A month with nothing in it is zero both ways, not NaN.
+const quiet = accountFlow("g", ledger, "2026-07");
+assert.equal(quiet.inward, 0);
+assert.equal(quiet.outward, 0);
+
+// An account nothing was ever filed against reads empty rather than throwing.
+assert.deepEqual(accountFlow("nobody", ledger, "2026-09"), { inward: 0, outward: 0 });
 
 /* ----------------------------------------------------------- categories --- */
 

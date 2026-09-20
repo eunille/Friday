@@ -55,3 +55,6 @@ yarn-error.*
 /m1.jpg
 /m2.jpg
 /download*.jpg
+
+# A saved logowik page, not an asset: the logo in it is only a remote URL.
+assets/gcash-logo-vector-*.html

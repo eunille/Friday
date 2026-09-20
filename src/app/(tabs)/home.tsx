@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Typography } from "heroui-native";
-import { useEffect, useMemo, useState, type ComponentProps, type JSX } from "react";
+import { useCallback, useMemo, useState, type ComponentProps, type JSX } from "react";
 import { Pressable, View } from "react-native";
 
 import { useConfirm } from "../../components/dialog";
@@ -111,7 +111,10 @@ export default function Home(): JSX.Element {
     [txns]
   );
 
-  useEffect(() => {
+  // On focus, not just on mount. This tab stays mounted under whatever is
+  // pushed over it, so the Money strip kept showing the balance from before
+  // you went into Money and logged something.
+  const refresh = useCallback(() => {
     if (!db) return;
     void listAccounts(db).then(setAccounts);
     void listTxns(db).then(setTxns);
@@ -119,7 +122,13 @@ export default function Home(): JSX.Element {
     void listChats(db, 5).then(setChats);
     void listQuizResults(db, 5).then(setQuizzes);
     void weakTopics(db).then(setWeak);
+    // `revision` is not read here — it is a cache-buster. Deleting a note from
+    // this screen calls invalidate(), and bumping it is what makes the list
+    // read again without anyone having to navigate away and back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, revision]);
+
+  useFocusEffect(refresh);
 
   /**
    * Notes, chats and quiz attempts are three different tables but one idea —

@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Typography } from "heroui-native";
-import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
+import { useCallback, useMemo, useState, type JSX } from "react";
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import { useConfirm } from "../../components/dialog";
@@ -233,7 +233,11 @@ function Plan(): JSX.Element {
     void listGoals(db).then(setGoals);
   }, [db, month]);
 
-  useEffect(refresh, [refresh]);
+  // On focus, not just on mount. Pushed screens stay mounted underneath, so a
+  // balance read once at mount still showed the old number after logging
+  // something in Ask and coming back — the screen had never been told to look
+  // again.
+  useFocusEffect(refresh);
 
   // Worst first: the one about to be blown is the reason to open this screen.
   const statuses = useMemo(

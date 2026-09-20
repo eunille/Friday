@@ -1,6 +1,14 @@
 @import "tailwindcss";
 @import "uniwind";
 
+/* ponytail: imported unlayered, which on the *web preview only* lets heroui's
+   own `text__root--*` classes beat Tailwind utilities — `text-muted
+   text-[11.5px]` on a Typography renders 16px foreground in the browser. Native
+   is unaffected: uniwind compiles className into style props there, so there is
+   no cascade to lose. Importing it as `layer(heroui)` is the textbook fix and
+   does not work here — heroui's stylesheet contains `@utility` rules, and
+   Tailwind refuses those inside a layer. Judge type on the device, not the
+   preview; anything that must be exact in both is written as an inline style. */
 @import "heroui-native/styles";
 
 /* End-user path: heroui-native lives in the project's node_modules, one
