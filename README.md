@@ -6,7 +6,7 @@ off a photographed label — and it does all of that on the phone. No account, n
 no server. After the first run it works in airplane mode.
 
 <p align="center">
-  <img src="assets/download-qr.png" width="220" alt="QR code linking to the Android download" />
+  <img src="assets/download-qr-1.3.0.png" width="220" alt="QR code that downloads the Android APK" />
 </p>
 
 <p align="center">
