@@ -843,8 +843,7 @@ function Budget(): JSX.Element {
           />
         )}
 
-          </>,
-          0
+          </>
         )}
       </ScrollView>
 

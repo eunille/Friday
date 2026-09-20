@@ -1,11 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Typography } from "heroui-native";
-import { useFocusEffect } from "expo-router";
 import {
   Children,
   Fragment,
   isValidElement,
-  useCallback,
   useEffect,
   useState,
   type ComponentProps,
@@ -92,28 +90,22 @@ const LAST = 6;
  * shape the opening's wordmark already uses and that is known to work on every
  * platform this ships to, web included.
  *
- * `visit` is what makes it replay. A tab stays mounted under whatever is
- * pushed over it, so a mount-only animation would play once per app launch and
- * never again — which is not what navigating to a page looks like.
+ * Plays on mount and never again. It used to replay whenever the screen took
+ * focus — which is also the instant a back gesture starts, so the page you
+ * were returning *to* blanked to nothing and re-dealt its cards while the page
+ * you were leaving was still sliding off. That was the flicker. A tab you come
+ * back to should look the way you left it; tab switches get their animation
+ * from the navigator instead, which runs it on the UI thread.
  */
-function Reveal({
-  delay,
-  visit,
-  children,
-}: {
-  delay: number;
-  visit: number;
-  children: ReactNode;
-}): JSX.Element {
+function Reveal({ delay, children }: { delay: number; children: ReactNode }): JSX.Element {
   const show = useSharedValue(0);
 
   useEffect(() => {
-    show.value = 0;
     show.value = withDelay(
       delay,
       withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) })
     );
-  }, [show, delay, visit]);
+  }, [show, delay]);
 
   const style = useAnimatedStyle(() => ({
     opacity: show.value,
@@ -133,7 +125,7 @@ function Reveal({
  * element — the `false` a conditional leaves behind — passes straight through,
  * because wrapping it would add an empty row to the container's gap.
  */
-export function stagger(children: ReactNode, visit: number): ReactNode {
+export function stagger(children: ReactNode): ReactNode {
   // A lone fragment is how a caller hands over a list from inside JSX. Stagger
   // what is in it, or the whole page arrives as one block and the helper looks
   // like it did nothing.
@@ -144,9 +136,7 @@ export function stagger(children: ReactNode, visit: number): ReactNode {
 
   return Children.map(list, (child, index) =>
     isValidElement(child) ? (
-      <Reveal delay={Math.min(index, LAST) * STEP} visit={visit}>
-        {child}
-      </Reveal>
+      <Reveal delay={Math.min(index, LAST) * STEP}>{child}</Reveal>
     ) : (
       child
     )
@@ -156,15 +146,6 @@ export function stagger(children: ReactNode, visit: number): ReactNode {
 export function Screen({ children }: { children: ReactNode }): JSX.Element {
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardHeight();
-
-  // Bumped every time the screen comes into view, which is what restarts the
-  // stagger. Counting rather than toggling, so two visits in a row differ.
-  const [visit, setVisit] = useState(0);
-  useFocusEffect(
-    useCallback(() => {
-      setVisit((count) => count + 1);
-    }, [])
-  );
 
   return (
     <ScrollView
@@ -177,7 +158,7 @@ export function Screen({ children }: { children: ReactNode }): JSX.Element {
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
     >
-      {stagger(children, visit)}
+      {stagger(children)}
     </ScrollView>
   );
 }
@@ -201,9 +182,7 @@ export function PageScroll({ children }: { children: ReactNode }): JSX.Element {
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
     >
-      {/* No visit counter: a pushed page unmounts when you leave it, so its
-          children are new every time anyway. */}
-      {stagger(children, 0)}
+      {stagger(children)}
     </ScrollView>
   );
 }

@@ -79,29 +79,36 @@ type Phase =
 
 /** The score as a ring. Nothing in RN draws a conic gradient, but SVG has had
     a dashed arc since forever, and it animates for free if we ever want it. */
+const RING = 76;
+
 function ScoreRing({ score, colour, track }: { score: number; colour: string; track: string }): JSX.Element {
-  const radius = 38;
+  const radius = 31;
+  const centre = RING / 2;
   const circumference = 2 * Math.PI * radius;
 
   return (
-    <View className="h-24 w-24 items-center justify-center">
-      <Svg width={96} height={96} style={{ position: "absolute" }}>
-        <Circle cx={48} cy={48} r={radius} stroke={track} strokeWidth={9} fill="none" />
+    // 76 rather than 96. A 360dp phone leaves this row 184dp for the words
+    // next to a 96px ring, which is not a line length — the verdict broke over
+    // two lines and the reference note over three. Twenty pixels off the ring
+    // buys the text a fifth more width and costs the number nothing.
+    <View style={{ width: RING, height: RING }} className="shrink-0 items-center justify-center">
+      <Svg width={RING} height={RING} style={{ position: "absolute" }}>
+        <Circle cx={centre} cy={centre} r={radius} stroke={track} strokeWidth={8} fill="none" />
         <Circle
-          cx={48}
-          cy={48}
+          cx={centre}
+          cy={centre}
           r={radius}
           stroke={colour}
-          strokeWidth={9}
+          strokeWidth={8}
           fill="none"
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={circumference * (1 - Math.max(0, Math.min(100, score)) / 100)}
-          transform="rotate(-90 48 48)"
+          transform={`rotate(-90 ${centre} ${centre})`}
         />
       </Svg>
-      <Typography.Paragraph className="font-ui-bold text-[26px]">{score}</Typography.Paragraph>
-      <Typography.Paragraph className="font-ui-medium text-[9.5px] text-muted">
+      <Typography.Paragraph className="font-ui-bold text-[22px]">{score}</Typography.Paragraph>
+      <Typography.Paragraph className="font-ui-medium text-[9px] text-muted">
         / 100
       </Typography.Paragraph>
     </View>
@@ -519,10 +526,18 @@ export default function Scan(): JSX.Element {
                     }`}
                   >
                     <Ionicons name="checkmark-circle" size={15} color={palette.onDevice} />
-                    <Typography.Paragraph className="flex-1 font-ui-medium text-[13px]">
+                    <Typography.Paragraph
+                      numberOfLines={1}
+                      className="flex-1 font-ui-medium text-[13px]"
+                    >
                       {row.label}
                     </Typography.Paragraph>
-                    <Typography.Paragraph className="font-ui-bold text-[13px]">
+                    {/* The number is the point of the row, so it keeps its
+                        width and the label gives way. */}
+                    <Typography.Paragraph
+                      numberOfLines={1}
+                      className="shrink-0 font-ui-bold text-[13px]"
+                    >
                       {row.value}
                     </Typography.Paragraph>
                   </View>
@@ -654,26 +669,31 @@ export default function Scan(): JSX.Element {
 
             {/* Score first, reasons second, prose third — and the reference
                 named twice, so this never reads as a diagnosis. */}
-            <View className="flex-row items-center gap-4 rounded-[20px] border border-border bg-surface p-4">
-              <ScoreRing
-                score={assessment.score}
-                colour={scoreColour(assessment.score)}
-                track={palette.border}
-              />
-              <View className="flex-1 gap-1.5">
-                <Typography.Paragraph className="font-ui-medium text-[10px] uppercase tracking-wider text-muted">
-                  Assessment
-                </Typography.Paragraph>
-                <Typography.Paragraph
-                  className="font-ui-bold text-[17px] leading-[22px]"
-                  style={{ color: scoreColour(assessment.score) }}
-                >
-                  {assessment.verdict}
-                </Typography.Paragraph>
-                <Typography.Paragraph className="font-read text-[11.5px] leading-[17px] text-muted-strong">
-                  Scored against the {REFERENCE_LABEL} — not a medical opinion.
-                </Typography.Paragraph>
+            <View className="gap-2.5 rounded-[20px] border border-border bg-surface p-4">
+              <View className="flex-row items-center gap-4">
+                <ScoreRing
+                  score={assessment.score}
+                  colour={scoreColour(assessment.score)}
+                  track={palette.border}
+                />
+                <View className="flex-1 gap-1.5">
+                  <Typography.Paragraph className="font-ui-medium text-[10px] uppercase tracking-wider text-muted">
+                    Assessment
+                  </Typography.Paragraph>
+                  <Typography.Paragraph
+                    className="font-ui-bold text-[17px] leading-[22px]"
+                    style={{ color: scoreColour(assessment.score) }}
+                  >
+                    {assessment.verdict}
+                  </Typography.Paragraph>
+                </View>
               </View>
+              {/* Under the row, not beside the ring. It is one sentence and it
+                  reads as one line at full width; in the column next to a ring
+                  it came out as three ragged ones. */}
+              <Typography.Paragraph className="font-read text-[11.5px] leading-[17px] text-muted-strong">
+                Scored against the {REFERENCE_LABEL} — not a medical opinion.
+              </Typography.Paragraph>
             </View>
 
             {/* What the number means, worked out in TypeScript against the
@@ -721,10 +741,19 @@ export default function Scan(): JSX.Element {
                     className="h-2.5 w-2.5 rounded-full"
                     style={{ backgroundColor: toneColour(row.tone) }}
                   />
-                  <Typography.Paragraph className="flex-1 font-ui-medium text-[13px]">
+                  <Typography.Paragraph
+                    numberOfLines={1}
+                    className="flex-1 font-ui-medium text-[13px]"
+                  >
                     {row.label}
                   </Typography.Paragraph>
-                  <Typography.Paragraph className="font-ui text-[11.5px] text-muted">
+                  {/* Four columns share 296dp here. The label is the only one
+                      that can be truncated and still leave the row meaning
+                      something, so it is the only one allowed to give. */}
+                  <Typography.Paragraph
+                    numberOfLines={1}
+                    className="shrink-0 font-ui text-[11.5px] text-muted"
+                  >
                     {row.amount}
                   </Typography.Paragraph>
                   {/* The word carries the judgement too — colour is never the
@@ -733,7 +762,7 @@ export default function Scan(): JSX.Element {
                       "Moderat / e" inside a fixed 62px column. */}
                   <Typography.Paragraph
                     numberOfLines={1}
-                    className="min-w-[68px] text-right font-ui-bold text-[11.5px]"
+                    className="min-w-[68px] shrink-0 text-right font-ui-bold text-[11.5px]"
                     style={{ color: toneColour(row.tone) }}
                   >
                     {row.word}

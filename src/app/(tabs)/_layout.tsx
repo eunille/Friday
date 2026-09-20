@@ -9,7 +9,15 @@ import { Dock } from "../../components/dock";
  */
 export default function TabsLayout(): JSX.Element {
   return (
-    <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <Dock {...props} />}>
+    // The navigator's own transition, not a hand-rolled one. Switching tabs
+    // used to re-deal every card on the page from opacity 0, which fought
+    // whatever the navigator was doing and read as a flicker; "shift" slides
+    // the scene a little in the direction you moved, on the UI thread, and
+    // cannot fall out of step with itself.
+    <Tabs
+      screenOptions={{ headerShown: false, animation: "shift" }}
+      tabBar={(props) => <Dock {...props} />}
+    >
       <Tabs.Screen name="home" />
       <Tabs.Screen name="index" />
       <Tabs.Screen name="scan" />

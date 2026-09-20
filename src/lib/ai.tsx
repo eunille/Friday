@@ -781,7 +781,12 @@ function Manifest({ steps }: { steps: readonly Step[] }): JSX.Element {
           >
             {item.name}
           </Typography.Paragraph>
-          <Typography.Paragraph className="font-ui text-muted text-[12px]">
+          {/* Never the column that gives way: "37 MB later" broken over two
+              lines is unreadable, a long model name wrapped is merely long. */}
+          <Typography.Paragraph
+            numberOfLines={1}
+            className="shrink-0 font-ui text-muted text-[12px]"
+          >
             {item.state === "done"
               ? "on this phone"
               : item.state === "later"
@@ -827,12 +832,19 @@ export function ModelGate({ children }: { children: ReactNode }): JSX.Element {
         status.fetching ? (
           <View className="gap-5">
             <MascotFocused />
-            <View className="flex-row items-end justify-between">
-              <Typography.Heading type="h2" className="font-ui-bold text-[26px] tracking-tight">
+            {/* The heading shrinks, the percentage never does. Neither could
+                before, so "Preparing Qwen2.5 0.5B" and "65%" each claimed
+                their full width and the row ran off the right edge as
+                "…0.5B65%". A model name is the part that can afford to wrap. */}
+            <View className="flex-row items-end justify-between gap-3">
+              <Typography.Heading
+                type="h2"
+                className="flex-1 font-ui-bold text-[26px] leading-[32px] tracking-tight"
+              >
                 {status.stage}
               </Typography.Heading>
               {status.progress > 0 ? (
-                <Typography.Paragraph className="font-ui-bold text-accent text-[26px]">
+                <Typography.Paragraph className="shrink-0 font-ui-bold text-accent text-[26px] leading-[32px]">
                   {Math.round(status.progress * 100)}%
                 </Typography.Paragraph>
               ) : (

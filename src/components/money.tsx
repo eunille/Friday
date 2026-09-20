@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, {
   Circle,
   Defs,
@@ -109,52 +110,57 @@ export function BrandSurface({ colour, radius }: { colour: string; radius: numbe
   const blob = `blob${uid}`;
 
   return (
-    // width/height as well as absoluteFill: the style stretches the element,
-    // but an <svg> with no sizing attributes still lays its *canvas* out at the
-    // SVG default of 300x150, so on anything wider the fill stopped dead at
-    // 300px and left a hard seam. Only visible once this was used on a
-    // full-width hero rather than a 158px card.
-    <Svg width="100%" height="100%" style={StyleSheet.absoluteFill} pointerEvents="none">
-      <Defs>
-        <LinearGradient id={face} x1="0" y1="0" x2="1" y2="1">
-          <Stop offset="0" stopColor={shift(colour, 0.32)} />
-          <Stop offset="0.5" stopColor={colour} />
-          <Stop offset="1" stopColor={shift(colour, -0.34)} />
-        </LinearGradient>
-        <LinearGradient id={gloss} x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor="#ffffff" stopOpacity="0.30" />
-          <Stop offset="1" stopColor="#ffffff" stopOpacity="0" />
-        </LinearGradient>
-        {/* A blob with a hard edge reads as a sticker. Fading it to nothing at
-            its own rim is what makes it look like light on a surface. */}
-        <RadialGradient id={blob} cx="50%" cy="50%" r="50%">
-          <Stop offset="0" stopColor="#ffffff" stopOpacity="0.20" />
-          <Stop offset="0.6" stopColor="#ffffff" stopOpacity="0.10" />
-          <Stop offset="1" stopColor="#ffffff" stopOpacity="0" />
-        </RadialGradient>
-      </Defs>
+    // The plain View is what makes the wash reach the edges. Yoga resolves an
+    // absolute child's *insets* against the parent's border box but a
+    // percentage *width* against its content box, so an <Svg width="100%">
+    // pinned with absoluteFill started at the card's left edge and stopped a
+    // whole padding short of the right one — a hard seam down a p-4 card,
+    // which is what made the hero read as half-transparent. Insets alone have
+    // no such disagreement, so the wrapper fills the card and the Svg fills a
+    // parent with no padding to argue about.
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <Svg width="100%" height="100%">
+        <Defs>
+          <LinearGradient id={face} x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor={shift(colour, 0.32)} />
+            <Stop offset="0.5" stopColor={colour} />
+            <Stop offset="1" stopColor={shift(colour, -0.34)} />
+          </LinearGradient>
+          <LinearGradient id={gloss} x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="#ffffff" stopOpacity="0.30" />
+            <Stop offset="1" stopColor="#ffffff" stopOpacity="0" />
+          </LinearGradient>
+          {/* A blob with a hard edge reads as a sticker. Fading it to nothing
+              at its own rim is what makes it look like light on a surface. */}
+          <RadialGradient id={blob} cx="50%" cy="50%" r="50%">
+            <Stop offset="0" stopColor="#ffffff" stopOpacity="0.20" />
+            <Stop offset="0.6" stopColor="#ffffff" stopOpacity="0.10" />
+            <Stop offset="1" stopColor="#ffffff" stopOpacity="0" />
+          </RadialGradient>
+        </Defs>
 
-      <Rect x="0" y="0" width="100%" height="100%" rx={radius} fill={`url(#${face})`} />
+        <Rect x="0" y="0" width="100%" height="100%" rx={radius} fill={`url(#${face})`} />
 
-      {/* Everything below bleeds off an edge on purpose. A circle that fits
-          inside the card reads as a dot someone put there; one running off the
-          side reads as the card being a window onto something larger. The
-          parent View clips them — see the overflow-hidden on the card. */}
-      <Circle cx="84%" cy="116%" r="58%" fill={`url(#${blob})`} />
-      <Circle cx="112%" cy="70%" r="38%" fill={`url(#${blob})`} />
-      {/* One crisp line against all that softness, so the card has an edge to
-          catch the eye rather than only washes. */}
-      <Circle
-        cx="14%"
-        cy="-18%"
-        r="34%"
-        fill="none"
-        stroke="#ffffff"
-        strokeOpacity={0.22}
-        strokeWidth={1}
-      />
-      <Ellipse cx="82%" cy="-6%" rx="78%" ry="52%" fill={`url(#${gloss})`} />
-    </Svg>
+        {/* Everything below bleeds off an edge on purpose. A circle that fits
+            inside the card reads as a dot someone put there; one running off
+            the side reads as the card being a window onto something larger.
+            The parent View clips them — see the overflow-hidden on the card. */}
+        <Circle cx="84%" cy="116%" r="58%" fill={`url(#${blob})`} />
+        <Circle cx="112%" cy="70%" r="38%" fill={`url(#${blob})`} />
+        {/* One crisp line against all that softness, so the card has an edge to
+            catch the eye rather than only washes. */}
+        <Circle
+          cx="14%"
+          cy="-18%"
+          r="34%"
+          fill="none"
+          stroke="#ffffff"
+          strokeOpacity={0.22}
+          strokeWidth={1}
+        />
+        <Ellipse cx="82%" cy="-6%" rx="78%" ry="52%" fill={`url(#${gloss})`} />
+      </Svg>
+    </View>
   );
 }
 
@@ -224,6 +230,8 @@ export function Drawer({
   onClose: () => void;
   children: ReactNode;
 }): JSX.Element {
+  const insets = useSafeAreaInsets();
+
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, justifyContent: "flex-end" }}>
@@ -240,7 +248,14 @@ export function Drawer({
             backgroundColor: "rgba(0,0,0,0.55)",
           }}
         />
-        <View className="max-h-[90%] rounded-t-[26px] border border-border bg-surface pb-8">
+        {/* A Modal draws edge to edge, so the sheet's own bottom padding was
+            the only thing holding its last row clear of Android's back/home
+            strip — and 32 is less than a navigation bar. Carrying the inset is
+            what stops the final action being sliced in half. */}
+        <View
+          className="max-h-[90%] rounded-t-[26px] border border-border bg-surface"
+          style={{ paddingBottom: insets.bottom + 24 }}
+        >
           {/* The grab bar does nothing — the sheet is not draggable — but it is
               what says at a glance that this is a sheet you can get out of
               rather than a screen you have arrived at. */}

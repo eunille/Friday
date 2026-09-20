@@ -13,6 +13,7 @@
     },
     "preview": {
       "distribution": "internal",
+      "autoIncrement": true,
       "android": {
         "gradleCommand": ":app:assembleRelease -PreactNativeArchitectures=arm64-v8a"
       }
