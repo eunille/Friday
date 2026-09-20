@@ -37,6 +37,10 @@ const NAME = "Friday";
  * pose has to be looked at: the squash, the shake and the wink each get two to
  * three times a wingbeat. They used to run at roughly the same rate as the
  * flap, which is why the beats worth seeing were the ones that flicked past.
+ *
+ * The wink is held longest of all. It is the one frame anybody waits for, and
+ * a wink that does not pause is a twitch. The frame after it is nearly as long
+ * — coming out of a blink at speed undoes the pause you just took.
  */
 const SHOTS: readonly (readonly [number, number])[] = [
   // The wingbeat, twice, brisk.
@@ -54,16 +58,16 @@ const SHOTS: readonly (readonly [number, number])[] = [
   [1575, 6], // touchdown, squashed, eyes shut
   [1775, 7], // shakes it off
   [2035, 8], // stands
-  [2335, 9], // the wink, the one frame people look for
-  [2555, 10], // eyes open again
+  [2485, 9], // the wink — the longest hold in the sequence, on purpose
+  [2845, 10], // eyes open again, unhurried
 ];
 const BURST = 11;
 
 /** Beats, in ms from mount, so the sequence can be read in one place. */
-const RUN = 2900; // the clock the sprite and the flight path both read
+const RUN = 3200; // the clock the sprite and the flight path both read
 const WORD = 2050; // first letter, as he comes up onto his feet
 const STAGGER = 44; // between letters
-const LEAVE = 3050;
+const LEAVE = 3350;
 
 /**
  * One letter of the wordmark.
@@ -170,7 +174,7 @@ export function Boot({ onDone }: { onDone: () => void }): JSX.Element | null {
         // Far, then close, settling at 1 — and a pop when the sparks go.
         scale: interpolate(
           clock.value,
-          [0, 575, 1035, 1335, 2555, 2700, 2860],
+          [0, 575, 1035, 1335, 2845, 2990, 3150],
           [0.5, 0.92, 1.07, 1, 1, 1.12, 1],
           Extrapolation.CLAMP
         ),
