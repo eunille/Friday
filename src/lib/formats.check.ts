@@ -162,10 +162,7 @@ const box = (text: string, x1: number, y1: number) => ({
 // Same line, supplied right-to-left, must read left-to-right.
 assert.equal(readingOrder([box("1,480mg", 120, 50), box("Sodium", 10, 51)]), "Sodium 1,480mg");
 // Different lines stay different lines, in top-to-bottom order.
-assert.equal(
-  readingOrder([box("Protein", 10, 90), box("Sodium", 10, 50)]),
-  "Sodium\nProtein"
-);
+assert.equal(readingOrder([box("Protein", 10, 90), box("Sodium", 10, 50)]), "Sodium\nProtein");
 // Blank detections are dropped rather than becoming stray spaces.
 assert.equal(readingOrder([box("  ", 10, 50), box("Sugar", 60, 50)]), "Sugar");
 assert.equal(readingOrder([]), "");
@@ -197,10 +194,7 @@ const scored = (text: string, x1: number, y1: number, score: number) => ({
   bbox: { x1, y1, x2: x1 + 40, y2: y1 + 10 },
   score,
 });
-assert.equal(
-  readingOrder([scored("Sodium", 10, 50, 0.95), scored("s~m", 60, 50, 0.05)]),
-  "Sodium"
-);
+assert.equal(readingOrder([scored("Sodium", 10, 50, 0.95), scored("s~m", 60, 50, 0.05)]), "Sodium");
 // A box with no score at all is trusted, so fixtures and older callers work.
 assert.equal(readingOrder([box("Sodium", 10, 50)]), "Sodium");
 

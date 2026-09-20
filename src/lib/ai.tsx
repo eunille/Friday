@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import type { DB } from "@op-engineering/op-sqlite";
 import { ExecuTorchEmbeddings, ExecuTorchLLM } from "@react-native-rag/executorch";
 import { OPSQLiteVectorStore } from "@react-native-rag/op-sqlite";
@@ -20,6 +21,7 @@ import { RAG, uuidv4 } from "react-native-rag";
 import { MascotAtWork, useCookingWord } from "../components/cooking";
 import { joinChunks } from "./formats";
 import { createLedgerTables } from "./ledger";
+import { usePalette } from "./theme";
 
 // ExecuTorch 0.9+ ships no downloader of its own — an adapter must be
 // registered before anything tries to load a model. Module scope, so this runs
@@ -37,7 +39,7 @@ export const TIERS = {
   tiny: {
     label: "Tiny",
     name: "Qwen2.5 0.5B",
-    size: "0.4 GB",
+    size: "400 MB",
     note: "Fastest to get running.",
     model: models.llm.qwen2_5_0_5b,
   },
@@ -86,12 +88,30 @@ export type Note = {
   updatedAt: string;
 };
 
+/**
+ * One thing the phone has to fetch, and where it has got to.
+ *
+ * `later` is not a queue: Whisper and the OCR pair are only pulled the first
+ * time the mic or the camera is used. They are on this list anyway, because a
+ * fresh install deserves to know the whole bill before it starts paying it —
+ * "0.4 GB" is a very different decision from "0.4 GB now and 0.27 GB the first
+ * time you tap the mic".
+ */
+export type Step = {
+  key: string;
+  name: string;
+  size: string;
+  state: "done" | "now" | "later";
+  /** 0..1, and only meaningful while this one is the download in flight. */
+  progress: number;
+};
+
 export type AIStatus =
   // `fetching` separates the two waits that look identical from outside: a
   // one-off download over the network, and reading files already on disk into
   // memory. Progress cannot tell them apart, because a warm start never reports
   // any, so 0% means both "not started yet" and "nothing to download".
-  | { kind: "loading"; stage: string; progress: number; fetching: boolean }
+  | { kind: "loading"; stage: string; progress: number; fetching: boolean; steps: readonly Step[] }
   | { kind: "ready" }
   | { kind: "error"; message: string };
 
@@ -182,21 +202,21 @@ export const EXTRAS = [
   {
     key: "embeddings",
     name: "MiniLM L6 v2",
-    size: "0.09 GB",
+    size: "87 MB",
     note: "Finds the passages that answer a question.",
     when: "With the first launch — nothing works without it.",
   },
   {
     key: "speech",
     name: "Whisper tiny (English)",
-    size: "0.23 GB",
+    size: "222 MB",
     note: "Turns speech into text for the mic.",
     when: "The first time you dictate.",
   },
   {
     key: "ocr",
     name: "CRAFT + CRNN (English)",
-    size: "0.04 GB",
+    size: "37 MB",
     note: "Reads text out of a photo.",
     when: "The first time you scan something.",
   },
@@ -510,6 +530,36 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
     const isFetching = (what: Tier | "embeddings"): boolean =>
       download?.of === what || !fetched.has(what);
 
+    /**
+     * The whole bill, in the order the phone works through it.
+     *
+     * Built here rather than in the gate so there is one account of what is
+     * downloaded and what is not — the gate only draws it.
+     */
+    const step = (key: string, name: string, size: string, done: boolean): Step => ({
+      key,
+      name,
+      size,
+      state: done ? "done" : "now",
+      progress: download?.of === key ? download.progress : 0,
+    });
+
+    const steps: Step[] = [
+      step("embeddings", EXTRAS[0].name, EXTRAS[0].size, fetched.has("embeddings")),
+      ...(tier ? [step(tier, TIERS[tier].name, TIERS[tier].size, fetched.has(tier))] : []),
+      // Never tracked as downloaded, because nothing downloads them until the
+      // feature is used. Saying "later" is the honest state for both.
+      ...EXTRAS.slice(1).map(
+        (extra): Step => ({
+          key: extra.key,
+          name: extra.name,
+          size: extra.size,
+          state: "later",
+          progress: 0,
+        })
+      ),
+    ];
+
     const status: AIStatus = error
       ? { kind: "error", message: error }
       : rag
@@ -522,6 +572,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
                 : "Opening your notes",
               progress: download?.of === "embeddings" ? download.progress : 0,
               fetching: isFetching("embeddings"),
+              steps,
             }
           : {
               kind: "loading",
@@ -534,6 +585,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
                   : TIERS[tier].name,
               progress: download?.of === tier ? download.progress : 0,
               fetching: tier ? isFetching(tier) : false,
+              steps,
             };
 
     return {
@@ -645,6 +697,60 @@ function Warming({ stage }: { stage: string }): JSX.Element {
 }
 
 /**
+ * The whole bill, on the one screen that has the person's attention.
+ *
+ * A single bar naming one file answers "how long" and not "how much", and the
+ * two that arrive later — the voice model and the pair behind the camera —
+ * would otherwise turn up as a surprise download weeks after install. Better
+ * to say so once, here, than to be asked later why the mic wants the network.
+ */
+function Manifest({ steps }: { steps: readonly Step[] }): JSX.Element {
+  const palette = usePalette();
+
+  return (
+    <View className="gap-2.5 rounded-2xl border border-border bg-surface p-3.5">
+      {steps.map((item) => (
+        <View key={item.key} className="flex-row items-center gap-2.5">
+          <Ionicons
+            name={
+              item.state === "done"
+                ? "checkmark-circle"
+                : item.state === "now"
+                  ? "arrow-down-circle"
+                  : "time-outline"
+            }
+            size={16}
+            color={
+              item.state === "done"
+                ? palette.onDevice
+                : item.state === "now"
+                  ? palette.accent
+                  : palette.mutedSoft
+            }
+          />
+          <Typography.Paragraph
+            className={`flex-1 font-ui-medium text-[13.5px] ${
+              item.state === "later" ? "text-muted" : ""
+            }`}
+          >
+            {item.name}
+          </Typography.Paragraph>
+          <Typography.Paragraph className="font-ui text-muted text-[12px]">
+            {item.state === "done"
+              ? "on this phone"
+              : item.state === "later"
+                ? `${item.size} later`
+                : item.progress > 0
+                  ? `${Math.round(item.progress * 100)}% of ${item.size}`
+                  : item.size}
+          </Typography.Paragraph>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/**
  * Renders `children` as soon as storage is open, without waiting for the model.
  *
  * The budget screens read and write SQLite and never ask the model anything, so
@@ -694,6 +800,8 @@ export function ModelGate({ children }: { children: ReactNode }): JSX.Element {
                 style={{ width: `${Math.max(status.progress, 0.01) * 100}%` }}
               />
             </View>
+
+            <Manifest steps={status.steps} />
 
             <Typography.Paragraph className="font-read text-muted text-[15px] leading-6">
               This is the only time the app needs a network. Keep it open until the bar fills, then
