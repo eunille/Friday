@@ -1,10 +1,15 @@
-"""Cut the app icon out of the sprite atlas.
+"""Cut everything the app uses out of the sprite atlas.
 
-    python tools/cut-idle-icon.py
+    python tools/cut-sprites.py
 
-Takes the Main/Idle owl from `assets/images/sprites/sprites.png` and writes the
-four places the mark appears: `icon.png`, `adaptive-icon.png`, `favicon.png`
-and `splash-icon.png`.
+From `assets/images/sprites/sprites.png`:
+
+* the Main/Idle owl, to the four places the mark appears — `icon.png`,
+  `adaptive-icon.png`, `favicon.png` and `splash-icon.png`;
+* the Cooking row, to `sprites/cook-sheet.png`, the five frame loop the warm
+  start plays under the changing word;
+* Typing and Focus, to `sprites/work-sheet.png`, which plays while a model
+  downloads.
 
 The atlas has no alpha. Its transparency is a *painted* checkerboard, and the
 owl's own face is (253,253,253) — the same value as the light squares — so no
@@ -31,6 +36,18 @@ ATLAS = "assets/images/sprites/sprites.png"
 CELL = (8, 46, 210, 240)  # the Main/Idle owl, generously boxed
 GROUND = (22, 24, 29, 255)  # #16181D, matching adaptiveIcon.backgroundColor
 
+# The two loops. Frames are cropped at their own left edge and a shared
+# vertical window, so the owl stays put while the pan, the egg and the sparks
+# move — which is the whole point of the row. The cell is wider than any frame
+# on purpose: art flush against a cell edge bleeds into the neighbouring cell
+# as soon as the window lands on a fractional pixel, which it does on the web.
+FRAME = (120, 134)
+GUTTER = 6  # clear space inside each cell, so a cell edge never cuts the art
+WINDOW = (290, 424)  # the shared y band, in atlas pixels
+COOK = [(28, 125), (141, 246), (253, 341), (347, 433), (470, 561)]
+WORK = [(812, 912), (922, 1016)]
+LOOP_SCALE = 4  # after halving: a net 2x, so a 110dp box is not a 3x upscale
+
 ICON = 1024
 BODY = 9  # upscale for icon.png: 86 art pixels -> 774, about 76% of the icon
 SAFE = 7  # adaptive-icon.png: Android masks to the middle 66%, so 602 fits
@@ -43,8 +60,9 @@ def checker(pixel: tuple[int, int, int]) -> bool:
     return (max(r, g, b) - min(r, g, b)) <= 6 and (r + g + b) // 3 >= 228
 
 
-def cut() -> Image.Image:
-    crop = Image.open(ATLAS).convert("RGB").crop(CELL)
+def keyed(box: tuple[int, int, int, int]) -> Image.Image:
+    """Lift one region off the painted checkerboard."""
+    crop = Image.open(ATLAS).convert("RGB").crop(box)
     w, h = crop.size
     px = crop.load()
 
@@ -87,8 +105,32 @@ def cut() -> Image.Image:
             if not kp[x, y]:
                 op[x, y] = (0, 0, 0, 0)
 
+    return out
+
+
+def cut() -> Image.Image:
+    out = keyed(CELL)
     out = out.crop(out.getbbox())
     return out.resize((out.size[0] // 2, out.size[1] // 2), Image.BOX)
+
+
+def sheet(frames: list[tuple[int, int]], centred: bool) -> Image.Image:
+    """Lay a row of the atlas out as one strip of equal cells."""
+    strip = Image.new("RGBA", (FRAME[0] * len(frames), FRAME[1]), (0, 0, 0, 0))
+    for column, (left, right) in enumerate(frames):
+        cell = keyed((left, WINDOW[0], right, WINDOW[1]))
+        # Trim to what actually survived the key before aligning: the column
+        # scan's edge is wherever the frame got thick enough to detect, which
+        # is not the owl, and lining up on it makes him slide about.
+        box = cell.getbbox()
+        cell = cell.crop((box[0], 0, box[2], FRAME[1]))
+        inset = (FRAME[0] - cell.size[0]) // 2 if centred else GUTTER
+        x = column * FRAME[0] + inset
+        strip.alpha_composite(cell, (x, 0))
+    half = strip.resize((strip.size[0] // 2, strip.size[1] // 2), Image.BOX)
+    return half.resize(
+        (half.size[0] * LOOP_SCALE, half.size[1] * LOOP_SCALE), Image.NEAREST
+    )
 
 
 def place(owl: Image.Image, factor: int, size: int, ground: tuple[int, int, int, int] | None):
@@ -110,6 +152,11 @@ def main() -> None:
     )
     place(owl, SPLASH, 420, None).save("assets/images/splash-icon.png", optimize=True)
     print("wrote icon, adaptive-icon, favicon, splash-icon")
+
+    for name, frames, centred in (("cook", COOK, False), ("work", WORK, True)):
+        strip = sheet(frames, centred)
+        strip.save(f"assets/images/sprites/{name}-sheet.png", optimize=True)
+        print(f"{name}-sheet: {strip.size[0]}x{strip.size[1]}, {len(frames)} frames")
 
 
 if __name__ == "__main__":

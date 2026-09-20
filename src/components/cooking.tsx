@@ -1,59 +1,69 @@
 import { useEffect, useState, type JSX } from "react";
-import { View } from "react-native";
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from "react-native-reanimated";
-
-/** Same sprites and size as the opening, so the wait reads as the same app. */
-const MARK = { width: 140, height: 104 };
-const BODY = require("../../assets/images/mascot-body.png");
-const SPARKS = require("../../assets/images/mascot-sparks.png");
+import { Image, View } from "react-native";
 
 /**
- * The mascot, still working.
- *
- * Only translation and opacity, for the same reason as the opening: scaling
- * pixel art by a fraction arrives blurred.
+ * One cell of a loop sheet, on screen. The sheets are cut at 240x268 so this is
+ * a 1.5x upscale on a 3x phone rather than a 3x one.
  */
-export function MascotAtWork(): JSX.Element {
-  const bob = useSharedValue(0);
-  const spark = useSharedValue(0);
+const CELL = { width: 120, height: 134 };
+
+const COOK = require("../../assets/images/sprites/cook-sheet.png");
+const WORK = require("../../assets/images/sprites/work-sheet.png");
+
+/**
+ * A strip of frames, played on a timer.
+ *
+ * ponytail: JS state and setInterval, not a reanimated worklet. The opening
+ * needs the UI thread because JS is busy booting at that moment; this plays
+ * while the phone is reading a model off disk or pulling one down, when a
+ * timer every few hundred milliseconds costs nothing.
+ */
+function Loop({ sheet, frames, every }: { sheet: number; frames: number; every: number }) {
+  const [index, setIndex] = useState(0);
 
   useEffect(() => {
-    bob.value = withRepeat(
-      withTiming(-6, { duration: 900, easing: Easing.inOut(Easing.quad) }),
-      -1,
-      true
-    );
-    // Not reversed: a spark that flew up and then slid back down would read as
-    // a yo-yo. Restarting from the pan is what looks like a new one.
-    spark.value = withRepeat(
-      withTiming(1, { duration: 1100, easing: Easing.out(Easing.quad) }),
-      -1,
-      false
-    );
-  }, [bob, spark]);
-
-  const bodyStyle = useAnimatedStyle(() => ({ transform: [{ translateY: bob.value }] }));
-  const sparkStyle = useAnimatedStyle(() => ({
-    opacity: 1 - spark.value,
-    transform: [{ translateY: -20 * spark.value }],
-  }));
+    const id = setInterval(() => setIndex((current) => (current + 1) % frames), every);
+    return () => clearInterval(id);
+  }, [frames, every]);
 
   return (
     <View
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
-      style={[MARK, { alignSelf: "center" }]}
+      style={[CELL, { alignSelf: "center", overflow: "hidden" }]}
     >
-      <Animated.Image source={BODY} style={[MARK, { position: "absolute" }, bodyStyle]} />
-      <Animated.Image source={SPARKS} style={[MARK, { position: "absolute" }, sparkStyle]} />
+      <Image
+        source={sheet}
+        style={{
+          width: CELL.width * frames,
+          height: CELL.height,
+          transform: [{ translateX: -index * CELL.width }],
+        }}
+      />
     </View>
   );
+}
+
+/**
+ * The mascot cooking, for the warm start.
+ *
+ * Five frames that tell one small story — pan, tilt, egg up, catch, plated —
+ * so the screen is visibly doing something even though loading a model off
+ * disk reports no progress at all. Slow enough that the egg reads.
+ */
+export function MascotAtWork(): JSX.Element {
+  return <Loop sheet={COOK} frames={5} every={380} />;
+}
+
+/**
+ * The mascot at the laptop, for a download.
+ *
+ * Two frames, fast, because typing is the motion. A download does report
+ * progress, so this only has to say the phone is still awake — the bar next to
+ * it says how far along.
+ */
+export function MascotDownloading(): JSX.Element {
+  return <Loop sheet={WORK} frames={2} every={260} />;
 }
 
 /**

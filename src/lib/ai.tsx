@@ -18,7 +18,7 @@ import { initExecutorch, models } from "react-native-executorch";
 import { ExpoResourceFetcher } from "react-native-executorch-expo-resource-fetcher";
 import { RAG, uuidv4 } from "react-native-rag";
 
-import { MascotAtWork, useCookingWord } from "../components/cooking";
+import { MascotAtWork, MascotDownloading, useCookingWord } from "../components/cooking";
 import { joinChunks } from "./formats";
 import { createLedgerTables } from "./ledger";
 import { usePalette } from "./theme";
@@ -565,15 +565,13 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
       ...(tier ? [step(tier, TIERS[tier].name, TIERS[tier].size, fetched.has(tier))] : []),
       // Never tracked as downloaded, because nothing downloads them until the
       // feature is used. Saying "later" is the honest state for both.
-      ...EXTRAS.slice(1).map(
-        (extra): Step => ({
-          key: extra.key,
-          name: extra.name,
-          size: extra.size,
-          state: "later",
-          progress: 0,
-        })
-      ),
+      ...EXTRAS.slice(1).map((extra): Step => ({
+        key: extra.key,
+        name: extra.name,
+        size: extra.size,
+        state: "later",
+        progress: 0,
+      })),
     ];
 
     const status: AIStatus = error
@@ -716,6 +714,35 @@ function Warming({ stage }: { stage: string }): JSX.Element {
 }
 
 /**
+ * How far the file has come, in blocks.
+ *
+ * Stepped to twentieths rather than drawn continuously: a hairline that creeps
+ * a pixel at a time next to a pixel mascot looks like a different app, and a
+ * block that lands every 5% is easier to read at a glance than a smooth edge.
+ * Never empty, because a bar with nothing in it reads as a bar that is stuck.
+ */
+const STEPS = 20;
+
+function ProgressBar({ value }: { value: number }): JSX.Element {
+  const filled = Math.max(1, Math.round(value * STEPS));
+
+  return (
+    <View
+      accessibilityRole="progressbar"
+      accessibilityValue={{ min: 0, max: 100, now: Math.round(value * 100) }}
+      className="h-3.5 w-full flex-row gap-[2px] overflow-hidden rounded-[3px] border border-border bg-surface-tertiary p-[2px]"
+    >
+      {Array.from({ length: STEPS }, (_, step) => (
+        <View
+          key={step}
+          className={`h-full flex-1 rounded-[1px] ${step < filled ? "bg-accent" : ""}`}
+        />
+      ))}
+    </View>
+  );
+}
+
+/**
  * The whole bill, on the one screen that has the person's attention.
  *
  * A single bar naming one file answers "how long" and not "how much", and the
@@ -799,7 +826,7 @@ export function ModelGate({ children }: { children: ReactNode }): JSX.Element {
       {status.kind === "loading" ? (
         status.fetching ? (
           <View className="gap-5">
-            <MascotAtWork />
+            <MascotDownloading />
             <View className="flex-row items-end justify-between">
               <Typography.Heading type="h2" className="font-ui-bold text-[26px] tracking-tight">
                 {status.stage}
@@ -813,12 +840,7 @@ export function ModelGate({ children }: { children: ReactNode }): JSX.Element {
               )}
             </View>
 
-            <View className="h-[3px] w-full overflow-hidden rounded-full bg-surface-tertiary">
-              <View
-                className="h-full rounded-full bg-accent"
-                style={{ width: `${Math.max(status.progress, 0.01) * 100}%` }}
-              />
-            </View>
+            <ProgressBar value={status.progress} />
 
             <Manifest steps={status.steps} />
 
