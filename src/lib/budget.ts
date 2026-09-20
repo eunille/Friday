@@ -114,7 +114,57 @@ export const CATEGORIES = {
   other: { label: "Other", icon: "ellipsis-horizontal" },
 } as const;
 
-export type Category = keyof typeof CATEGORIES;
+/** The ones shipped with the app, which carry an icon and a written label. */
+export type KnownCategory = keyof typeof CATEGORIES;
+
+/**
+ * A shipped category, or anything the owner typed.
+ *
+ * The eleven above cover most spending and nobody's spending is most spending
+ * — tuition for one person is "tithe" or "pamasahe ni nanay" for another. The
+ * intersection with `string` keeps editor autocomplete for the known keys
+ * while still accepting a new one.
+ *
+ * Nothing may index CATEGORIES with this directly. Use `categoryOf`.
+ */
+export type Category = KnownCategory | (string & {});
+
+/** Turns "date night" into "Date night". Only ever for display. */
+function titleCase(text: string): string {
+  const clean = text.trim().replace(/[\s_-]+/g, " ");
+  return clean === "" ? "Other" : clean[0].toUpperCase() + clean.slice(1);
+}
+
+/**
+ * How to draw a category, shipped or invented.
+ *
+ * Every lookup goes through here rather than indexing CATEGORIES, because an
+ * owner's own category has no entry there and a bare index would return
+ * undefined — then `.label` throws, and it throws inside a list of their
+ * money.
+ */
+export function categoryOf(category: Category | undefined): { label: string; icon: string } {
+  const known = CATEGORIES[category as KnownCategory];
+  return known ?? { label: titleCase(category ?? "other"), icon: "pricetag" };
+}
+
+/**
+ * Every category worth offering: the shipped ones, then any the owner has
+ * already used, so a category invented once can be picked again.
+ */
+export function categoriesInUse(
+  used: readonly { category?: Category }[]
+): { known: KnownCategory[]; own: string[] } {
+  const shipped = new Set<string>(Object.keys(CATEGORIES));
+  const own = new Set<string>();
+  for (const row of used) {
+    if (row.category !== undefined && !shipped.has(row.category)) own.add(row.category);
+  }
+  return {
+    known: Object.keys(CATEGORIES) as KnownCategory[],
+    own: [...own].sort(),
+  };
+}
 
 export const INCOME_SOURCES = {
   salary: { label: "Salary" },
@@ -419,6 +469,36 @@ const MAX_STEPS = 400;
  * `lastRun` are skipped, so running it twice on the same day cannot double a
  * bill — which is the whole reason `lastRun` is stored rather than inferred.
  */
+/**
+ * What everything that repeats costs in a typical month.
+ *
+ * Cadences are normalised rather than counted against a real calendar: a
+ * yearly bill is a twelfth of itself each month, a weekly one is 52/12 of
+ * itself. That is the honest way to state a *rate* — counting occurrences in
+ * the current month would make the same set of bills read differently in
+ * February than in March, and this is a headline figure people compare
+ * against their income.
+ */
+export function monthlyRepeat(rules: readonly Recurring[]): {
+  outgoing: Centavos;
+  incoming: Centavos;
+} {
+  const PER_MONTH: Record<Every, number> = {
+    daily: 365 / 12,
+    weekly: 52 / 12,
+    monthly: 1,
+    yearly: 1 / 12,
+  };
+  let outgoing = 0;
+  let incoming = 0;
+  for (const rule of rules) {
+    const monthly = Math.round(rule.amount * PER_MONTH[rule.every]);
+    if (rule.kind === "income") incoming += monthly;
+    else outgoing += monthly;
+  }
+  return { outgoing, incoming };
+}
+
 export function dueDates(rule: Recurring, until: Date): string[] {
   const dates: string[] = [];
   const limit = until.getTime();

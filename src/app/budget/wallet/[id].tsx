@@ -254,6 +254,7 @@ function Wallet(): JSX.Element {
         <TxnEditor
           key={draft.id}
           draft={draft}
+          used={txns}
           accounts={accounts.filter((row) => !row.archived)}
           onChange={setDraft}
           onClose={() => setDraft(null)}

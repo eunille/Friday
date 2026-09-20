@@ -2,13 +2,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Typography } from "heroui-native";
 import { useCallback, useMemo, useState, type JSX } from "react";
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import { useConfirm } from "../../components/dialog";
 import { IconButton, PageHeader, SectionTitle } from "../../components/screen";
+import { CategoryPicker, Drawer, Field, SheetHead } from "../../components/money";
 import { DataGate, newNoteId, useAI } from "../../lib/ai";
 import {
-  CATEGORIES,
+  categoryOf,
   budgetStatus,
   goalForecast,
   monthKey,
@@ -35,8 +36,6 @@ import {
 } from "../../lib/ledger";
 import { usePalette } from "../../lib/theme";
 
-const CATEGORY_KEYS = Object.keys(CATEGORIES) as Category[];
-
 function Bar({ share, band }: { share: number; band: BudgetBand }): JSX.Element {
   const palette = usePalette();
   const tint =
@@ -58,12 +57,14 @@ function Bar({ share, band }: { share: number; band: BudgetBand }): JSX.Element 
 function AmountSheet({
   title,
   label,
+  hint,
   initial,
   onClose,
   onSave,
 }: {
   title: string;
   label: string;
+  hint?: string;
   initial: number;
   onClose: () => void;
   onSave: (centavos: number) => void;
@@ -74,29 +75,136 @@ function AmountSheet({
   const valid = parsed !== null && parsed > 0;
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" }}>
-        <View className="gap-4 rounded-t-[26px] border border-border bg-surface p-5 pb-8">
-          <View className="flex-row items-center justify-between">
-            <Typography.Heading type="h2" className="font-ui-bold text-[19px]">
-              {title}
-            </Typography.Heading>
-            <IconButton name="close" label="Close" tone="muted" onPress={onClose} />
-          </View>
+    <Drawer onClose={onClose}>
+      <SheetHead title={title} onClose={onClose} />
+      <ScrollView
+        contentContainerClassName="px-5 pt-4 pb-2 gap-4"
+        keyboardShouldPersistTaps="handled"
+      >
+        <Field label={label} hint={hint}>
           <TextInput
             value={text}
             onChangeText={setText}
             keyboardType="decimal-pad"
             autoFocus
-            placeholder={label}
+            placeholder="0.00"
             placeholderTextColor={palette.muted}
             className="rounded-xl border border-border bg-background px-3.5 py-3 font-ui-bold text-[26px] text-foreground"
           />
+        </Field>
+        <Pressable
+          accessibilityRole="button"
+          disabled={!valid}
+          onPress={() => valid && onSave(parsed)}
+          className="min-h-[48px] items-center justify-center rounded-full active:opacity-80"
+          style={{ backgroundColor: palette.accent, opacity: valid ? 1 : 0.4 }}
+        >
+          <Text
+            style={{
+              fontFamily: "Archivo_600SemiBold",
+              fontSize: 14,
+              color: palette.accentForeground,
+            }}
+          >
+            Save
+          </Text>
+        </Pressable>
+      </ScrollView>
+    </Drawer>
+  );
+}
+
+function GoalSheet({
+  goal,
+  isNew,
+  onChange,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  goal: Goal;
+  isNew: boolean;
+  onChange: (next: Goal) => void;
+  onClose: () => void;
+  onSave: () => void;
+  onDelete: () => void;
+}): JSX.Element {
+  const palette = usePalette();
+  // Seeded once, never synced back: an effect mirroring `goal` would re-run on
+  // every keystroke and rewrite what is being typed.
+  const [target, setTarget] = useState(() => (goal.target === 0 ? "" : String(goal.target / 100)));
+  const [saved, setSaved] = useState(() => (goal.saved === 0 ? "" : String(goal.saved / 100)));
+  const valid = goal.name.trim() !== "" && (parseAmount(target) ?? 0) > 0;
+
+  return (
+    <Drawer onClose={onClose}>
+      <SheetHead title={isNew ? "New goal" : "Edit goal"} onClose={onClose} />
+      <ScrollView
+        contentContainerClassName="px-5 pt-4 pb-2 gap-4"
+        keyboardShouldPersistTaps="handled"
+      >
+        <Field label="What you are saving for">
+          <TextInput
+            value={goal.name}
+            onChangeText={(name) => onChange({ ...goal, name })}
+            placeholder="Emergency fund, laptop, trip…"
+            placeholderTextColor={palette.muted}
+            className="rounded-xl border border-border bg-background px-3.5 py-3 font-ui text-[15px] text-foreground"
+          />
+        </Field>
+
+        <Field label="Target">
+          <TextInput
+            value={target}
+            onChangeText={(text) => {
+              setTarget(text);
+              onChange({ ...goal, target: parseAmount(text) ?? 0 });
+            }}
+            keyboardType="decimal-pad"
+            placeholder="0.00"
+            placeholderTextColor={palette.muted}
+            className="rounded-xl border border-border bg-background px-3.5 py-3 font-ui-bold text-[20px] text-foreground"
+          />
+        </Field>
+
+        <Field
+          label="Put away so far"
+          hint="Typed in, not counted from the ledger — money for a goal usually sits in a wallet with everything else."
+        >
+          <TextInput
+            value={saved}
+            onChangeText={(text) => {
+              setSaved(text);
+              onChange({ ...goal, saved: parseAmount(text) ?? 0 });
+            }}
+            keyboardType="decimal-pad"
+            placeholder="0.00"
+            placeholderTextColor={palette.muted}
+            className="rounded-xl border border-border bg-background px-3.5 py-3 font-ui-bold text-[20px] text-foreground"
+          />
+        </Field>
+
+        <View className="flex-row gap-2 pt-1">
+          {/* Only for a goal that exists. It used to appear as soon as a target
+              was typed, offering to delete something never saved. */}
+          {!isNew && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={onDelete}
+              className="min-h-[48px] justify-center rounded-full border border-border px-4 active:opacity-70"
+            >
+              <Text
+                style={{ fontFamily: "Archivo_600SemiBold", fontSize: 14, color: palette.danger }}
+              >
+                Delete
+              </Text>
+            </Pressable>
+          )}
           <Pressable
             accessibilityRole="button"
             disabled={!valid}
-            onPress={() => valid && onSave(parsed)}
-            className="min-h-[46px] items-center justify-center rounded-full active:opacity-80"
+            onPress={onSave}
+            className="min-h-[48px] flex-1 items-center justify-center rounded-full active:opacity-80"
             style={{ backgroundColor: palette.accent, opacity: valid ? 1 : 0.4 }}
           >
             <Text
@@ -106,110 +214,12 @@ function AmountSheet({
                 color: palette.accentForeground,
               }}
             >
-              Save
+              {isNew ? "Add goal" : "Save"}
             </Text>
           </Pressable>
         </View>
-      </View>
-    </Modal>
-  );
-}
-
-function GoalSheet({
-  goal,
-  onChange,
-  onClose,
-  onSave,
-  onDelete,
-}: {
-  goal: Goal;
-  onChange: (next: Goal) => void;
-  onClose: () => void;
-  onSave: () => void;
-  onDelete: () => void;
-}): JSX.Element {
-  const palette = usePalette();
-  const [target, setTarget] = useState(() => (goal.target === 0 ? "" : String(goal.target / 100)));
-  const [saved, setSaved] = useState(() => (goal.saved === 0 ? "" : String(goal.saved / 100)));
-  const existing = goal.target > 0;
-  const valid = goal.name.trim() !== "" && (parseAmount(target) ?? 0) > 0;
-
-  return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" }}>
-        <View className="gap-4 rounded-t-[26px] border border-border bg-surface p-5 pb-8">
-          <View className="flex-row items-center justify-between">
-            <Typography.Heading type="h2" className="font-ui-bold text-[19px]">
-              {existing ? "Edit goal" : "New goal"}
-            </Typography.Heading>
-            <IconButton name="close" label="Close" tone="muted" onPress={onClose} />
-          </View>
-
-          <TextInput
-            value={goal.name}
-            onChangeText={(name) => onChange({ ...goal, name })}
-            placeholder="What you are saving for"
-            placeholderTextColor={palette.muted}
-            className="rounded-xl border border-border bg-background px-3.5 py-3 font-ui text-[15px] text-foreground"
-          />
-          <TextInput
-            value={target}
-            onChangeText={(text) => {
-              setTarget(text);
-              onChange({ ...goal, target: parseAmount(text) ?? 0 });
-            }}
-            keyboardType="decimal-pad"
-            placeholder="Target amount"
-            placeholderTextColor={palette.muted}
-            className="rounded-xl border border-border bg-background px-3.5 py-3 font-ui text-[15px] text-foreground"
-          />
-          <TextInput
-            value={saved}
-            onChangeText={(text) => {
-              setSaved(text);
-              onChange({ ...goal, saved: parseAmount(text) ?? 0 });
-            }}
-            keyboardType="decimal-pad"
-            placeholder="Put away so far"
-            placeholderTextColor={palette.muted}
-            className="rounded-xl border border-border bg-background px-3.5 py-3 font-ui text-[15px] text-foreground"
-          />
-
-          <View className="flex-row gap-2">
-            {existing && (
-              <Pressable
-                accessibilityRole="button"
-                onPress={onDelete}
-                className="min-h-[46px] justify-center rounded-full border border-border px-4 active:opacity-70"
-              >
-                <Text
-                  style={{ fontFamily: "Archivo_600SemiBold", fontSize: 14, color: palette.danger }}
-                >
-                  Delete
-                </Text>
-              </Pressable>
-            )}
-            <Pressable
-              accessibilityRole="button"
-              disabled={!valid}
-              onPress={onSave}
-              className="min-h-[46px] flex-1 items-center justify-center rounded-full active:opacity-80"
-              style={{ backgroundColor: palette.accent, opacity: valid ? 1 : 0.4 }}
-            >
-              <Text
-                style={{
-                  fontFamily: "Archivo_600SemiBold",
-                  fontSize: 14,
-                  color: palette.accentForeground,
-                }}
-              >
-                Save
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
-    </Modal>
+      </ScrollView>
+    </Drawer>
   );
 }
 
@@ -225,6 +235,7 @@ function Plan(): JSX.Element {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [editing, setEditing] = useState<Category | null>(null);
   const [goalDraft, setGoalDraft] = useState<Goal | null>(null);
+  const [pickingBudget, setPickingBudget] = useState(false);
 
   const refresh = useCallback(() => {
     if (!db) return;
@@ -294,7 +305,7 @@ function Plan(): JSX.Element {
   const dropBudget = useCallback(
     (stored: StoredBudget) => {
       confirm.ask({
-        title: `Stop tracking ${CATEGORIES[stored.category].label}?`,
+        title: `Stop tracking ${categoryOf(stored.category).label}?`,
         message: "The spending stays where it is; only the limit goes.",
         action: "Remove",
         destructive: true,
@@ -326,10 +337,6 @@ function Plan(): JSX.Element {
       onConfirm: () => void deleteGoal(db, target.id).then(refresh),
     });
   }, [db, goalDraft, confirm, refresh]);
-
-  const untracked = CATEGORY_KEYS.filter(
-    (category) => !budgets.some((budget) => budget.category === category)
-  );
 
   return (
     <View className="flex-1 bg-background">
@@ -388,19 +395,19 @@ function Plan(): JSX.Element {
                 <Pressable
                   key={stored.id}
                   accessibilityRole="button"
-                  accessibilityLabel={`${CATEGORIES[status.category].label} limit, ${peso(status.spent)} of ${peso(status.limit)}`}
+                  accessibilityLabel={`${categoryOf(status.category).label} limit, ${peso(status.spent)} of ${peso(status.limit)}`}
                   onPress={() => setEditing(status.category)}
                   onLongPress={() => dropBudget(stored)}
                   className="gap-1.5 active:opacity-70"
                 >
                   <View className="flex-row items-center gap-2">
                     <Ionicons
-                      name={CATEGORIES[status.category].icon as never}
+                      name={categoryOf(status.category).icon as never}
                       size={14}
                       color={palette.muted}
                     />
                     <Typography.Paragraph className="flex-1 font-ui-medium text-[13.5px]">
-                      {CATEGORIES[status.category].label}
+                      {categoryOf(status.category).label}
                     </Typography.Paragraph>
                     <Text
                       style={{
@@ -428,32 +435,20 @@ function Plan(): JSX.Element {
             </View>
           )}
 
-          {untracked.length > 0 && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="-mx-1">
-              <View className="flex-row gap-2 px-1">
-                {untracked.map((category) => (
-                  <Pressable
-                    key={category}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Set a limit for ${CATEGORIES[category].label}`}
-                    onPress={() => setEditing(category)}
-                    className="min-h-[34px] flex-row items-center gap-1.5 rounded-full border border-border px-3 active:opacity-70"
-                  >
-                    <Ionicons name="add" size={13} color={palette.muted} />
-                    <Text
-                      style={{
-                        fontFamily: "Archivo_600SemiBold",
-                        fontSize: 12,
-                        color: palette.muted,
-                      }}
-                    >
-                      {CATEGORIES[category].label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </ScrollView>
-          )}
+          {/* One button and a list, not a scroller of eleven chips. The
+              scroller could only ever offer the built-in categories, and the
+              ones past the fourth were off the edge anyway. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Set a limit for a category"
+            onPress={() => setPickingBudget(true)}
+            className="min-h-[46px] flex-row items-center justify-center gap-2 rounded-full border border-border border-dashed active:bg-surface-tertiary"
+          >
+            <Ionicons name="add" size={17} color={palette.muted} />
+            <Text style={{ fontFamily: "Archivo_500Medium", fontSize: 13, color: palette.muted }}>
+              Set a limit
+            </Text>
+          </Pressable>
         </View>
 
         <View className="gap-2.5">
@@ -509,17 +504,28 @@ function Plan(): JSX.Element {
       {editing && (
         <AmountSheet
           key={editing}
-          title={`${CATEGORIES[editing].label} limit`}
+          title={`${categoryOf(editing).label} limit`}
           label="Monthly limit"
           initial={budgets.find((budget) => budget.category === editing)?.limit ?? 0}
           onClose={() => setEditing(null)}
           onSave={(centavos) => setLimit(editing, centavos)}
         />
       )}
+      {pickingBudget && (
+        <CategoryPicker
+          used={txns}
+          onPick={(category) => {
+            setPickingBudget(false);
+            setEditing(category);
+          }}
+          onClose={() => setPickingBudget(false)}
+        />
+      )}
       {goalDraft && (
         <GoalSheet
           key={goalDraft.id}
           goal={goalDraft}
+          isNew={!goals.some((item) => item.id === goalDraft.id)}
           onChange={setGoalDraft}
           onClose={() => setGoalDraft(null)}
           onSave={commitGoal}

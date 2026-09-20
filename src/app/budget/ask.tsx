@@ -11,6 +11,7 @@ import { DataGate, useAI } from "../../lib/ai";
 import {
   ACCOUNT_TYPES,
   CATEGORIES,
+  categoryOf,
   balanceOf,
   byCategory,
   monthKey,
@@ -50,7 +51,7 @@ function answer(
   if (wantsMost && wantsSpend) {
     const rows = byCategory(txns, month);
     if (rows.length === 0) return "Nothing logged this month yet.";
-    return `${CATEGORIES[rows[0].category].label}, at ${peso(rows[0].total)} this month.`;
+    return `${categoryOf(rows[0].category).label}, at ${peso(rows[0].total)} this month.`;
   }
 
   // A named wallet beats the general question, so "how much is in GCash" is
@@ -64,11 +65,11 @@ function answer(
   }
 
   const category = (Object.keys(CATEGORIES) as Category[]).find((key) =>
-    text.includes(CATEGORIES[key].label.toLowerCase())
+    text.includes(categoryOf(key).label.toLowerCase())
   );
   if (category && wantsSpend) {
     const row = byCategory(txns, month).find((entry) => entry.category === category);
-    return `${peso(row?.total ?? 0)} on ${CATEGORIES[category].label} this month.`;
+    return `${peso(row?.total ?? 0)} on ${categoryOf(category).label} this month.`;
   }
 
   if (wantsSaved) {
@@ -129,7 +130,7 @@ function DraftRow({
       ? "swap-horizontal"
       : draft.txn.kind === "income"
         ? "arrow-down"
-        : CATEGORIES[draft.txn.category ?? "other"].icon;
+        : categoryOf(draft.txn.category).icon;
   const label = summarise(draft, accounts);
 
   return (

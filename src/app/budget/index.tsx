@@ -16,29 +16,41 @@ import {
   WalletEditor,
   type Action,
 } from "../../components/money";
+import { RepeatEditor, RepeatsSheet } from "../../components/repeats";
 import { IconButton, PageHeader } from "../../components/screen";
 import { DataGate, newNoteId, useAI } from "../../lib/ai";
 import {
-  CATEGORIES,
+  categoryOf,
   balanceOf,
   byCategory,
   monthKey,
+  dueDates,
+  monthlyRepeat,
   monthsEnding,
   netWorth,
   peso,
   totalsFor,
   type Account,
+  type Goal,
+  type Recurring,
   type Txn,
   type TxnKind,
 } from "../../lib/budget";
 import {
   countTxns,
   deleteAccount,
+  deleteRecurring,
   deleteTxn,
   listAccounts,
+  listBudgets,
+  listGoals,
+  listRecurring,
   listTxns,
+  runDue,
   saveAccount,
+  saveRecurring,
   saveTxn,
+  type StoredBudget,
 } from "../../lib/ledger";
 import { usePalette } from "../../lib/theme";
 
@@ -131,7 +143,7 @@ function Split({ txns, month }: { txns: readonly Txn[]; month: string }): JSX.El
               }}
             />
             <Typography.Paragraph className="font-ui text-muted text-[10.5px]">
-              {CATEGORIES[row.category].label} {Math.round((row.total / total) * 100)}%
+              {categoryOf(row.category).label} {Math.round((row.total / total) * 100)}%
             </Typography.Paragraph>
           </View>
         ))}
@@ -177,12 +189,22 @@ function Budget(): JSX.Element {
   const [wallet, setWallet] = useState<Account | null>(null);
   const [adding, setAdding] = useState(false);
   const [filter, setFilter] = useState<"all" | TxnKind>("all");
+  const [rules, setRules] = useState<Recurring[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [budgets, setBudgets] = useState<StoredBudget[]>([]);
+  const [repeatsOpen, setRepeatsOpen] = useState(false);
+  const [rule, setRule] = useState<Recurring | null>(null);
+
+  const month = monthKey(new Date().toISOString());
 
   const refresh = useCallback(() => {
     if (!db) return;
     void listAccounts(db).then(setAccounts);
     void listTxns(db).then(setTxns);
-  }, [db]);
+    void listRecurring(db).then(setRules);
+    void listGoals(db).then(setGoals);
+    void listBudgets(db, month).then(setBudgets);
+  }, [db, month]);
 
   // On focus, not just on mount. Pushed screens stay mounted underneath, so a
   // balance read once at mount still showed the old number after logging
@@ -191,7 +213,6 @@ function Budget(): JSX.Element {
   useFocusEffect(refresh);
 
   const live = useMemo(() => accounts.filter((account) => !account.archived), [accounts]);
-  const month = monthKey(new Date().toISOString());
   const totals = useMemo(() => totalsFor(txns, month), [txns, month]);
   const shown = useMemo(
     () => (filter === "all" ? txns : txns.filter((txn) => txn.kind === filter)),
@@ -217,6 +238,44 @@ function Budget(): JSX.Element {
   }, [live, txns]);
 
   const worth = useMemo(() => netWorth(live, txns), [live, txns]);
+
+  /** What repeats costs per month, and how much of it is waiting to be filed. */
+  const repeat = useMemo(() => monthlyRepeat(rules), [rules]);
+  // Pinned per render pass rather than re-read inside the loop, so every rule
+  // is counted against the same instant.
+  const dueNow = useMemo(() => {
+    const now = new Date();
+    return rules.reduce((sum, item) => sum + dueDates(item, now).length, 0);
+  }, [rules]);
+
+  /**
+   * What the Plan card says, in priority order: a budget being overspent is
+   * the thing you need to know first, then progress toward a goal, then
+   * whether anything is set at all.
+   */
+  const plan = useMemo(() => {
+    const over = budgets.filter((budget) => {
+      const spent = byCategory(txns, month).find((row) => row.category === budget.category);
+      return (spent?.total ?? 0) > budget.limit;
+    }).length;
+    if (over > 0) {
+      return { value: `${over} over`, note: over === 1 ? "budget passed" : "budgets passed", alarm: true };
+    }
+    if (goals.length > 0) {
+      const target = goals.reduce((sum, goal) => sum + goal.target, 0);
+      const saved = goals.reduce((sum, goal) => sum + goal.saved, 0);
+      const share = target > 0 ? Math.round((saved / target) * 100) : 0;
+      return {
+        value: `${share}%`,
+        note: goals.length === 1 ? "of your goal" : `across ${goals.length} goals`,
+        alarm: false,
+      };
+    }
+    if (budgets.length > 0) {
+      return { value: `${budgets.length}`, note: budgets.length === 1 ? "budget set" : "budgets set", alarm: false };
+    }
+    return { value: "—", note: "no budget or goal yet", alarm: false };
+  }, [budgets, goals, txns, month]);
 
   /** How many of the last six months have anything in them. */
   const active = useMemo(
@@ -259,6 +318,48 @@ function Budget(): JSX.Element {
       });
     });
   }, [db, wallet, confirm, refresh]);
+
+  const startRule = useCallback(() => {
+    const first = live[0];
+    if (!first) return;
+    setRepeatsOpen(false);
+    setRule({
+      id: newNoteId(),
+      label: "",
+      kind: "expense",
+      amount: 0,
+      accountId: first.id,
+      category: "subscriptions",
+      every: "monthly",
+      from: new Date().toISOString(),
+    });
+  }, [live]);
+
+  const saveRule = useCallback(() => {
+    if (!db || !rule) return;
+    void saveRecurring(db, rule).then(() => {
+      setRule(null);
+      refresh();
+    });
+  }, [db, rule, refresh]);
+
+  const dropRule = useCallback(() => {
+    if (!db || !rule) return;
+    const target = rule;
+    setRule(null);
+    confirm.ask({
+      title: `Delete ${target.label}?`,
+      message: "It stops repeating. Anything it already logged stays in the ledger.",
+      action: "Delete",
+      destructive: true,
+      onConfirm: () => void deleteRecurring(db, target.id).then(refresh),
+    });
+  }, [db, rule, confirm, refresh]);
+
+  const catchUp = useCallback(() => {
+    if (!db) return;
+    void runDue(db).then(refresh);
+  }, [db, refresh]);
 
   const commit = useCallback(() => {
     if (!db || !draft) return;
@@ -321,7 +422,7 @@ function Budget(): JSX.Element {
             label: "Repeating bill",
             hint: "Something that goes out every month",
             tint: palette.warning,
-            onPress: () => router.push("/budget/bills"),
+            onPress: startRule,
           },
         ]
       : []),
@@ -395,6 +496,82 @@ function Budget(): JSX.Element {
           </View>
         </View>
 
+        {/* Two figures that answer "what is already spoken for" and "am I on
+            track" — the pair of questions a balance on its own cannot. Both
+            open what they summarise rather than leading to a page of their
+            own. */}
+        <View className="flex-row gap-2.5">
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`What repeats, ${peso(repeat.outgoing)} a month`}
+            onPress={() => setRepeatsOpen(true)}
+            className="flex-1 gap-1.5 rounded-2xl border border-border bg-surface p-3.5 active:bg-surface-tertiary"
+          >
+            <View className="flex-row items-center gap-1.5">
+              <View
+                className="h-7 w-7 items-center justify-center rounded-lg"
+                style={{ backgroundColor: `${palette.warning}22` }}
+              >
+                <Ionicons name="repeat" size={15} color={palette.warning} />
+              </View>
+              {/* The badge earns its place: it is the only thing here that is
+                  asking to be acted on. */}
+              {dueNow > 0 && (
+                <View
+                  className="min-w-[18px] items-center rounded-full px-1.5 py-0.5"
+                  style={{ backgroundColor: palette.warning }}
+                >
+                  <Text
+                    style={{ color: "#fff", fontFamily: "Archivo_600SemiBold", fontSize: 9.5 }}
+                  >
+                    {dueNow} due
+                  </Text>
+                </View>
+              )}
+            </View>
+            <Text
+              style={{
+                color: palette.foreground,
+                fontFamily: "Archivo_600SemiBold",
+                fontSize: 19,
+                letterSpacing: -0.3,
+              }}
+            >
+              {peso(repeat.outgoing)}
+            </Text>
+            <Text style={{ color: palette.muted, fontFamily: "Archivo_400Regular", fontSize: 11.5 }}>
+              {rules.length === 0 ? "nothing repeats yet" : "repeats a month"}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Budgets and goals, ${plan.value} ${plan.note}`}
+            onPress={() => router.push("/budget/plan")}
+            className="flex-1 gap-1.5 rounded-2xl border border-border bg-surface p-3.5 active:bg-surface-tertiary"
+          >
+            <View
+              className="h-7 w-7 items-center justify-center rounded-lg"
+              style={{ backgroundColor: `${palette.plan}22` }}
+            >
+              <Ionicons name="flag" size={15} color={palette.plan} />
+            </View>
+            <Text
+              style={{
+                color: plan.alarm ? palette.danger : palette.foreground,
+                fontFamily: "Archivo_600SemiBold",
+                fontSize: 19,
+                letterSpacing: -0.3,
+              }}
+            >
+              {plan.value}
+            </Text>
+            <Text style={{ color: palette.muted, fontFamily: "Archivo_400Regular", fontSize: 11.5 }}>
+              {plan.note}
+            </Text>
+          </Pressable>
+        </View>
+
         {/* The wallets themselves, not a door to them. They are the first thing
             anyone wants from a money screen, and a horizontal run keeps any
             number of them to one card's height instead of pushing the rest of
@@ -445,58 +622,31 @@ function Budget(): JSX.Element {
           </ScrollView>
         </View>
 
-        {/* Navigation, not content. Three tiles rather than stacked full-width
-            cards: these are doors, and a door does not need a paragraph
-            explaining it. Each keeps its own hue, so the colour answers "where
-            does this go" before the label has been read. */}
-        <View className="flex-row gap-2.5">
-          {[
-            {
-              key: "ask",
-              icon: "chatbubble-ellipses",
-              label: "Budget",
-              tint: palette.ask,
-              go: () => router.push("/budget/ask"),
-              off: live.length === 0,
-            },
-            {
-              key: "bills",
-              icon: "repeat",
-              label: "Repeats",
-              tint: palette.warning,
-              go: () => router.push("/budget/bills"),
-              off: live.length === 0,
-            },
-            {
-              key: "plan",
-              icon: "flag",
-              label: "Plan",
-              tint: palette.plan,
-              go: () => router.push("/budget/plan"),
-              off: false,
-            },
-          ].map((tile) => (
-            <Pressable
-              key={tile.key}
-              accessibilityRole="button"
-              accessibilityLabel={tile.label}
-              disabled={tile.off}
-              onPress={tile.go}
-              className="flex-1 items-center gap-1.5 rounded-2xl border border-border bg-surface py-3 active:bg-surface-tertiary"
-              style={{ opacity: tile.off ? 0.45 : 1 }}
-            >
-              <View
-                className="h-9 w-9 items-center justify-center rounded-xl"
-                style={{ backgroundColor: `${tile.tint}22` }}
-              >
-                <Ionicons name={tile.icon as never} size={17} color={tile.tint} />
-              </View>
-              <Text style={{ fontFamily: "Archivo_500Medium", fontSize: 11, color: palette.muted }}>
-                {tile.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+        {/* One door, not a row of them. Repeats and Plan became the two cards
+            above, and a lone tile padded out to a third of the width reads as
+            two missing buttons rather than one deliberate one. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Budget chat"
+          disabled={live.length === 0}
+          onPress={() => router.push("/budget/ask")}
+          className="flex-row items-center gap-3 rounded-2xl border border-border bg-surface p-3.5 active:bg-surface-tertiary"
+          style={{ opacity: live.length === 0 ? 0.45 : 1 }}
+        >
+          <View
+            className="h-9 w-9 items-center justify-center rounded-xl"
+            style={{ backgroundColor: `${palette.ask}22` }}
+          >
+            <Ionicons name="chatbubble-ellipses" size={17} color={palette.ask} />
+          </View>
+          <View className="flex-1">
+            <Typography.Paragraph className="font-ui-medium text-[14px]">Budget</Typography.Paragraph>
+            <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
+              Say what you spent and it files it
+            </Typography.Paragraph>
+          </View>
+          <Ionicons name="chevron-forward" size={15} color={palette.muted} />
+        </Pressable>
 
         {/* The dashboard, in place rather than one tap away. The shape of the
             month is the reason to open this screen, so it should not be hiding
@@ -570,10 +720,38 @@ function Budget(): JSX.Element {
       </ScrollView>
 
       {adding && <ActionSheet actions={actions} onClose={() => setAdding(false)} />}
+      {repeatsOpen && (
+        <RepeatsSheet
+          rules={rules}
+          accounts={live}
+          due={dueNow}
+          onCatchUp={catchUp}
+          onEdit={(item) => {
+            setRepeatsOpen(false);
+            setRule(item);
+          }}
+          onAdd={startRule}
+          onClose={() => setRepeatsOpen(false)}
+        />
+      )}
+      {rule && (
+        <RepeatEditor
+          key={rule.id}
+          draft={rule}
+          accounts={live}
+          used={txns}
+          isNew={!rules.some((item) => item.id === rule.id)}
+          onChange={setRule}
+          onClose={() => setRule(null)}
+          onSave={saveRule}
+          onDelete={dropRule}
+        />
+      )}
       {draft && (
         <TxnEditor
           key={draft.id}
           draft={draft}
+          used={txns}
           accounts={live}
           onChange={setDraft}
           onClose={() => setDraft(null)}

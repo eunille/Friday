@@ -23,9 +23,10 @@ import Svg, {
 
 import {
   ACCOUNT_TYPES,
-  CATEGORIES,
   INCOME_SOURCES,
   balanceOf,
+  categoriesInUse,
+  categoryOf,
   openingFor,
   parseAmount,
   peso,
@@ -198,7 +199,6 @@ export function BrandMark({ type, size }: { type: AccountType; size: number }): 
   );
 }
 
-const CATEGORY_KEYS = Object.keys(CATEGORIES) as Category[];
 const SOURCE_KEYS = Object.keys(INCOME_SOURCES) as IncomeSource[];
 
 const KINDS: { kind: TxnKind; label: string }[] = [
@@ -255,7 +255,7 @@ export function Drawer({
 }
 
 /** Title and a close button, shared by every sheet here. */
-function SheetHead({ title, onClose }: { title: string; onClose: () => void }): JSX.Element {
+export function SheetHead({ title, onClose }: { title: string; onClose: () => void }): JSX.Element {
   return (
     <View className="flex-row items-center justify-between px-5 pt-1">
       <Typography.Heading type="h2" className="font-ui-bold text-[19px]">
@@ -267,7 +267,7 @@ function SheetHead({ title, onClose }: { title: string; onClose: () => void }): 
 }
 
 /** A labelled field. The label sits above, so it survives a filled input. */
-function Field({
+export function Field({
   label,
   hint,
   children,
@@ -638,14 +638,14 @@ export function TxnRow({
       ? `${from?.name ?? "?"} → ${to?.name ?? "?"}`
       : txn.kind === "income"
         ? INCOME_SOURCES[txn.source ?? "other"].label
-        : CATEGORIES[txn.category ?? "other"].label;
+        : categoryOf(txn.category).label;
 
   const icon =
     txn.kind === "transfer"
       ? "swap-horizontal"
       : txn.kind === "income"
         ? "arrow-down"
-        : CATEGORIES[txn.category ?? "other"].icon;
+        : categoryOf(txn.category).icon;
 
   const tint =
     txn.kind === "transfer"
@@ -709,6 +709,7 @@ export function TxnRow({
 export function TxnEditor({
   draft,
   accounts,
+  used,
   onChange,
   onClose,
   onSave,
@@ -716,12 +717,15 @@ export function TxnEditor({
 }: {
   draft: Txn;
   accounts: readonly Account[];
+  /** Everything already filed, so an invented category can be picked again. */
+  used: readonly { category?: Category }[];
   onChange: (next: Txn) => void;
   onClose: () => void;
   onSave: () => void;
   onDelete: () => void;
 }): JSX.Element {
   const palette = usePalette();
+  const [picking, setPicking] = useState(false);
 
   // Seeded once, never synced back — see the note in WalletEditor.
   const [amount, setAmount] = useState(() =>
@@ -733,6 +737,20 @@ export function TxnEditor({
     parsed !== null &&
     parsed > 0 &&
     (draft.kind !== "transfer" || (!!draft.toAccountId && draft.toAccountId !== draft.accountId));
+
+  if (picking) {
+    return (
+      <CategoryPicker
+        value={draft.category}
+        used={used}
+        onPick={(category) => {
+          onChange({ ...draft, category });
+          setPicking(false);
+        }}
+        onClose={() => setPicking(false)}
+      />
+    );
+  }
 
   return (
     <Drawer onClose={onClose}>
@@ -804,27 +822,26 @@ export function TxnEditor({
                 ))}
             </View>
           </Field>
-        ) : (
-          <Field label={draft.kind === "income" ? "Source" : "Category"}>
+        ) : draft.kind === "income" ? (
+          <Field label="Source">
             <View className="flex-row flex-wrap gap-2">
-              {draft.kind === "income"
-                ? SOURCE_KEYS.map((source) => (
-                    <Chip
-                      key={source}
-                      label={INCOME_SOURCES[source].label}
-                      on={draft.source === source}
-                      onPress={() => onChange({ ...draft, source })}
-                    />
-                  ))
-                : CATEGORY_KEYS.map((category) => (
-                    <Chip
-                      key={category}
-                      label={CATEGORIES[category].label}
-                      on={draft.category === category}
-                      onPress={() => onChange({ ...draft, category })}
-                    />
-                  ))}
+              {SOURCE_KEYS.map((source) => (
+                <Chip
+                  key={source}
+                  label={INCOME_SOURCES[source].label}
+                  on={draft.source === source}
+                  onPress={() => onChange({ ...draft, source })}
+                />
+              ))}
             </View>
+          </Field>
+        ) : (
+          <Field label="Category">
+            <PickerField
+              icon={categoryOf(draft.category).icon}
+              label={categoryOf(draft.category).label}
+              onPress={() => setPicking(true)}
+            />
           </Field>
         )}
 
@@ -933,6 +950,173 @@ export function ActionSheet({
           </Pressable>
         ))}
       </View>
+    </Drawer>
+  );
+}
+
+/* -------------------------------------------------------------- pickers --- */
+
+/**
+ * A field that opens a list, drawn to match the wallet kind picker.
+ *
+ * The chip rows these replace worked for three options and stopped working at
+ * eleven: past the fourth chip the rest live off the edge of a horizontal
+ * scroller and get found by accident. A field that says what is chosen, and a
+ * list when you want to change it, costs one tap and no hunting.
+ */
+export function PickerField({
+  icon,
+  tint,
+  label,
+  onPress,
+}: {
+  icon?: string;
+  tint?: string;
+  label: string;
+  onPress: () => void;
+}): JSX.Element {
+  const palette = usePalette();
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${label}. Change it.`}
+      onPress={onPress}
+      className="min-h-[50px] flex-row items-center gap-2.5 rounded-xl border border-border bg-background px-3 active:bg-surface-tertiary"
+    >
+      {icon !== undefined && (
+        <View
+          className="h-7 w-7 items-center justify-center rounded-lg"
+          style={{ backgroundColor: `${tint ?? palette.accent}1F` }}
+        >
+          <Ionicons name={icon as never} size={15} color={tint ?? palette.accent} />
+        </View>
+      )}
+      <Typography.Paragraph className="flex-1 font-ui-medium text-[15px]">
+        {label}
+      </Typography.Paragraph>
+      <Ionicons name="chevron-down" size={16} color={palette.muted} />
+    </Pressable>
+  );
+}
+
+/** One row in a picker list. */
+function PickRow({
+  icon,
+  label,
+  on,
+  onPress,
+}: {
+  icon: string;
+  label: string;
+  on: boolean;
+  onPress: () => void;
+}): JSX.Element {
+  const palette = usePalette();
+
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ selected: on }}
+      onPress={onPress}
+      className="min-h-[48px] flex-row items-center gap-3 rounded-xl px-3 active:bg-surface-tertiary"
+    >
+      <View
+        className="h-7 w-7 items-center justify-center rounded-lg"
+        style={{ backgroundColor: `${palette.accent}1F` }}
+      >
+        <Ionicons name={icon as never} size={15} color={palette.accent} />
+      </View>
+      <Typography.Paragraph className="flex-1 font-ui-medium text-[14.5px]">
+        {label}
+      </Typography.Paragraph>
+      {on && <Ionicons name="checkmark" size={18} color={palette.accent} />}
+    </Pressable>
+  );
+}
+
+/**
+ * Pick a category, or write one.
+ *
+ * The eleven shipped categories cover most spending, and nobody's spending is
+ * most spending — so anything typed here becomes a category too, and is
+ * offered back afterwards alongside the built-in ones. See `categoryOf`, which
+ * is what lets an invented key still draw a label and an icon.
+ */
+export function CategoryPicker({
+  value,
+  used,
+  onPick,
+  onClose,
+}: {
+  value?: Category;
+  /** Anything already filed, so a category invented once can be reused. */
+  used: readonly { category?: Category }[];
+  onPick: (category: Category) => void;
+  onClose: () => void;
+}): JSX.Element {
+  const palette = usePalette();
+  const [own, setOwn] = useState("");
+  const { known, own: mine } = categoriesInUse(used);
+  const typed = own.trim();
+
+  return (
+    <Drawer onClose={onClose}>
+      <SheetHead title="What for" onClose={onClose} />
+      <ScrollView contentContainerClassName="px-3 pt-2 pb-2 gap-2" keyboardShouldPersistTaps="handled">
+        <View className="flex-row items-center gap-2 px-1">
+          <TextInput
+            value={own}
+            onChangeText={setOwn}
+            placeholder="Or write your own…"
+            placeholderTextColor={palette.muted}
+            className="min-h-[46px] flex-1 rounded-xl border border-border bg-background px-3.5 font-ui text-[15px] text-foreground"
+            onSubmitEditing={() => typed !== "" && onPick(typed.toLowerCase())}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Use this category"
+            disabled={typed === ""}
+            onPress={() => onPick(typed.toLowerCase())}
+            className="h-[46px] w-[46px] items-center justify-center rounded-full"
+            style={{ backgroundColor: palette.accent, opacity: typed === "" ? 0.35 : 1 }}
+          >
+            <Ionicons name="arrow-forward" size={18} color={palette.accentForeground} />
+          </Pressable>
+        </View>
+
+        {mine.length > 0 && (
+          <View className="gap-0.5">
+            <Typography.Paragraph className="px-3 font-ui-medium text-muted text-[11.5px]">
+              Yours
+            </Typography.Paragraph>
+            {mine.map((category) => (
+              <PickRow
+                key={category}
+                icon={categoryOf(category).icon}
+                label={categoryOf(category).label}
+                on={value === category}
+                onPress={() => onPick(category)}
+              />
+            ))}
+          </View>
+        )}
+
+        <View className="gap-0.5">
+          <Typography.Paragraph className="px-3 font-ui-medium text-muted text-[11.5px]">
+            Built in
+          </Typography.Paragraph>
+          {known.map((category) => (
+            <PickRow
+              key={category}
+              icon={categoryOf(category).icon}
+              label={categoryOf(category).label}
+              on={value === category}
+              onPress={() => onPick(category)}
+            />
+          ))}
+        </View>
+      </ScrollView>
     </Drawer>
   );
 }

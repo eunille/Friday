@@ -7,7 +7,7 @@ import Svg, { Circle, G, Line, Path, Rect } from "react-native-svg";
 import { PageHeader, SectionTitle } from "../../components/screen";
 import { DataGate, useAI } from "../../lib/ai";
 import {
-  CATEGORIES,
+  categoryOf,
   byCategory,
   effectOn,
   monthKey,
@@ -202,7 +202,7 @@ function Ring({ txns, month }: { txns: readonly Txn[]; month: string }): JSX.Ele
               }}
             />
             <Typography.Paragraph className="flex-1 font-ui text-[11.5px]" numberOfLines={1}>
-              {CATEGORIES[slice.category].label}
+              {categoryOf(slice.category).label}
             </Typography.Paragraph>
             <Typography.Paragraph className="font-ui-medium text-muted text-[11px]">
               {Math.round((slice.total / total) * 100)}%

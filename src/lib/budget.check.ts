@@ -3,12 +3,15 @@ import assert from "node:assert/strict";
 import {
   accountFlow,
   balanceOf,
+  categoriesInUse,
+  categoryOf,
   budgetStatus,
   byCategory,
   dueDates,
   effectOn,
   forecast,
   goalForecast,
+  monthlyRepeat,
   monthsBetween,
   monthsEnding,
   movementOn,
@@ -381,5 +384,69 @@ assert.ok(squeezed.end < 0);
 const idle = forecast(500_000, [], new Date("2026-09-10"), new Date("2026-12-31"));
 assert.equal(idle.end, 500_000);
 assert.equal(idle.short, false);
+
+/* ------------------------------------------------- categories of one's own --- */
+
+// A shipped category keeps its written label and icon.
+assert.equal(categoryOf("food").label, "Food");
+assert.equal(categoryOf("food").icon, "fast-food");
+
+// One the owner invented has no entry to look up. It must still draw, because
+// the alternative is `.label` of undefined thrown inside a list of their money.
+assert.equal(categoryOf("tithe").label, "Tithe");
+assert.equal(categoryOf("date night").label, "Date night");
+assert.ok(categoryOf("tithe").icon.length > 0, "and something to draw for it");
+
+// Missing altogether is the same as "other", which is what the ledger stores
+// when nothing was named.
+assert.equal(categoryOf(undefined).label, categoryOf("other").label);
+assert.equal(categoryOf("").label, "Other");
+
+// Spending filed under an invented category still totals, because byCategory
+// never needed the key to be one of the eleven.
+const invented = [
+  txn({ kind: "expense", amount: 50_000, accountId: "g", category: "tithe", at: "2026-09-05T00:00:00.000Z" }),
+  txn({ kind: "expense", amount: 20_000, accountId: "g", category: "tithe", at: "2026-09-06T00:00:00.000Z" }),
+];
+assert.deepEqual(byCategory(invented, "2026-09"), [{ category: "tithe", total: 70_000 }]);
+
+// The picker offers the shipped ones plus whatever has already been used, so a
+// category invented once can be chosen again without retyping it.
+const offered = categoriesInUse([...invented, { category: "food" }, {}]);
+assert.deepEqual(offered.own, ["tithe"], "shipped ones are not repeated as custom");
+assert.ok(offered.known.includes("food"));
+assert.equal(offered.known.length, 11);
+
+/* --------------------------------------------------- what repeats costs --- */
+
+const netflix2: Recurring = {
+  id: "n",
+  label: "Netflix",
+  kind: "expense",
+  amount: 54_900,
+  accountId: "g",
+  every: "monthly",
+  from: "2026-09-01T00:00:00.000Z",
+};
+const domain: Recurring = { ...netflix2, id: "d", label: "Domain", amount: 120_000, every: "yearly" };
+const pay2: Recurring = { ...netflix2, id: "p", label: "Salary", kind: "income", amount: 3_200_000 };
+
+const rate = monthlyRepeat([netflix2, domain, pay2]);
+assert.equal(rate.incoming, 3_200_000, "income is kept apart from what goes out");
+// A yearly bill is a twelfth of itself per month, not its whole amount.
+assert.equal(rate.outgoing, 54_900 + Math.round(120_000 / 12));
+
+// A weekly bill is 52/12 of itself, not four times — the difference is a whole
+// payment a year, which is exactly the kind of quiet error this must not make.
+const perWeek = monthlyRepeat([{ ...netflix2, every: "weekly", amount: 10_000 }]);
+assert.equal(perWeek.outgoing, Math.round(10_000 * (52 / 12)));
+assert.ok(perWeek.outgoing > 40_000, "and more than four weeks' worth");
+
+// Nothing repeating is zero both ways, not NaN.
+assert.deepEqual(monthlyRepeat([]), { outgoing: 0, incoming: 0 });
+
+// Still integer centavos after the division — a rate that drifts a fraction is
+// a rate that stops adding up.
+assert.ok(Number.isInteger(monthlyRepeat([domain]).outgoing));
 
 console.log("budget: all checks passed");

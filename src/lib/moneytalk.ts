@@ -15,7 +15,7 @@
  */
 
 import {
-  CATEGORIES,
+  categoryOf,
   parseAmount,
   type Account,
   type Category,
@@ -510,5 +510,5 @@ export function summarise(draft: Draft, accounts: readonly Account[]): string {
   if (txn.kind === "transfer")
     return `Move from ${name(txn.accountId)} to ${name(txn.toAccountId)}`;
   if (txn.kind === "income") return `Income into ${name(txn.accountId)}`;
-  return `${CATEGORIES[txn.category ?? "other"].label} from ${name(txn.accountId)}`;
+  return `${categoryOf(txn.category).label} from ${name(txn.accountId)}`;
 }
