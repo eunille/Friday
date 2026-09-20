@@ -30,31 +30,40 @@ const NAME = "Friday";
  * 0-4 are the wingbeat, played twice; 5 is the hover with the thrusters lit;
  * 6 is the landing squash; 7 the shake; 8 standing; 9 the wink; 10 opens the
  * eyes; 11 is the sparkle burst, which is where it stays.
+ *
+ * The holds are deliberately uneven. A wingbeat is motion — slow it down and
+ * it stops reading as flapping and starts reading as slow motion — so those
+ * frames stay at about 115ms. Everything after the landing is a *pose*, and a
+ * pose has to be looked at: the squash, the shake and the wink each get two to
+ * three times a wingbeat. They used to run at roughly the same rate as the
+ * flap, which is why the beats worth seeing were the ones that flicked past.
  */
 const SHOTS: readonly (readonly [number, number])[] = [
-  [105, 0],
-  [210, 1],
-  [315, 2],
-  [420, 3],
-  [525, 4],
-  [630, 1],
-  [735, 2],
-  [840, 3],
-  [945, 4],
-  [1185, 5],
-  [1305, 6],
-  [1410, 7],
-  [1620, 8],
-  [1830, 9],
-  [1980, 10],
+  // The wingbeat, twice, brisk.
+  [115, 0],
+  [230, 1],
+  [345, 2],
+  [460, 3],
+  [575, 4],
+  [690, 1],
+  [805, 2],
+  [920, 3],
+  [1035, 4],
+  // Poses, held.
+  [1335, 5], // hover, thrusters lit
+  [1575, 6], // touchdown, squashed, eyes shut
+  [1775, 7], // shakes it off
+  [2035, 8], // stands
+  [2335, 9], // the wink, the one frame people look for
+  [2555, 10], // eyes open again
 ];
 const BURST = 11;
 
 /** Beats, in ms from mount, so the sequence can be read in one place. */
-const RUN = 2250; // the clock the sprite and the flight path both read
-const WORD = 1470; // first letter, once he is on his feet
+const RUN = 2900; // the clock the sprite and the flight path both read
+const WORD = 2050; // first letter, as he comes up onto his feet
 const STAGGER = 44; // between letters
-const LEAVE = 2550;
+const LEAVE = 3050;
 
 /**
  * One letter of the wordmark.
@@ -146,13 +155,13 @@ export function Boot({ onDone }: { onDone: () => void }): JSX.Element | null {
   const flight = useAnimatedStyle(() => ({
     transform: [
       {
-        translateX: interpolate(clock.value, [0, 945], [-140, 0], Extrapolation.CLAMP),
+        translateX: interpolate(clock.value, [0, 1035], [-140, 0], Extrapolation.CLAMP),
       },
       {
         // Up first, forward across the climb, then down onto the spot.
         translateY: interpolate(
           clock.value,
-          [0, 525, 945, 1050, 1185],
+          [0, 575, 1035, 1180, 1335],
           [150, -20, -40, -30, 0],
           Extrapolation.CLAMP
         ),
@@ -161,7 +170,7 @@ export function Boot({ onDone }: { onDone: () => void }): JSX.Element | null {
         // Far, then close, settling at 1 — and a pop when the sparks go.
         scale: interpolate(
           clock.value,
-          [0, 525, 945, 1185, 1980, 2100, 2250],
+          [0, 575, 1035, 1335, 2555, 2700, 2860],
           [0.5, 0.92, 1.07, 1, 1, 1.12, 1],
           Extrapolation.CLAMP
         ),
