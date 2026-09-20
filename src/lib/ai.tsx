@@ -143,6 +143,24 @@ const LENGTH_RULE: Record<AISettings["length"], string> = {
   detailed: "Answer thoroughly, but stop once the question is fully answered.",
 };
 
+/**
+ * The point at which an answer is cut off, whatever it was asked for.
+ *
+ * A 0.5B model treats "at most three sentences" as a suggestion and often
+ * ignores it, which is the whole of "the length setting does nothing". Asking
+ * is not enforcing, so generation is stopped here and the tail is trimmed back
+ * to the last finished sentence.
+ *
+ * Set well above the wording so the cap only fires when the instruction was
+ * already disregarded — a limit that trips on a well-behaved answer would make
+ * the setting feel broken in the other direction.
+ */
+export const LENGTH_TOKENS: Record<AISettings["length"], number> = {
+  brief: 160,
+  balanced: 420,
+  detailed: 1200,
+};
+
 const TONE_RULE: Record<AISettings["tone"], string> = {
   plain: "Use plain, everyday language.",
   friendly: "Be warm and conversational.",
@@ -150,20 +168,59 @@ const TONE_RULE: Record<AISettings["tone"], string> = {
 };
 
 /**
+ * Everything else the app fetches, so the Library can say what a phone will
+ * pull down and when.
+ *
+ * Sizes are the real content-length of each .pte, read from the model host
+ * rather than estimated — Whisper in particular is far larger than it sounds,
+ * and someone on mobile data deserves to know that before tapping the mic.
+ *
+ * None of these are chosen: they arrive when the feature that needs them is
+ * first used. Listing them is about warning, not configuring.
+ */
+export const EXTRAS = [
+  {
+    key: "embeddings",
+    name: "MiniLM L6 v2",
+    size: "0.09 GB",
+    note: "Finds the passages that answer a question.",
+    when: "With the first launch — nothing works without it.",
+  },
+  {
+    key: "speech",
+    name: "Whisper tiny (English)",
+    size: "0.23 GB",
+    note: "Turns speech into text for the mic.",
+    when: "The first time you dictate.",
+  },
+  {
+    key: "ocr",
+    name: "CRAFT + CRNN (English)",
+    size: "0.04 GB",
+    note: "Reads text out of a photo.",
+    when: "The first time you scan something.",
+  },
+] as const;
+
+/**
  * Builds the system message sent ahead of every question.
  *
- * The last two rules are not preferences, they are repairs. A 0.5B model left
- * to itself will restate the same clause three ways and then close by offering
- * more help, which is most of why answers felt long. Saying so directly costs
- * a few tokens and removes both.
+ * The two middle rules are not preferences, they are repairs. A 0.5B model
+ * left to itself will restate the same clause three ways and then close by
+ * offering more help, which is most of why answers felt long. Saying so
+ * directly costs a few tokens and removes both.
+ *
+ * None of this is binding — see LENGTH_TOKENS for the part that is.
  */
 export function systemPrompt(settings: AISettings): string {
   return [
     "You are a helpful assistant running entirely on the user's phone.",
-    LENGTH_RULE[settings.length],
     TONE_RULE[settings.tone],
     "Never repeat a point you have already made, in any wording.",
     "Do not end with an offer of further help or a summary of what you just said.",
+    // Last, because a small model weights the end of its instructions most
+    // heavily, and length is the rule it most often lets go of.
+    LENGTH_RULE[settings.length],
     settings.instructions.trim(),
   ]
     .filter(Boolean)

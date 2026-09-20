@@ -23,9 +23,11 @@ import {
   reindexNote,
   saveChat,
   saveNoteText,
+  LENGTH_TOKENS,
   systemPrompt,
   useAI,
 } from "../../lib/ai";
+import { trimToSentence } from "../../lib/formats";
 import { Composer } from "../../components/composer";
 import { useKeyboardOverlap, usePalette } from "../../lib/theme";
 
@@ -190,7 +192,10 @@ function Chat(): JSX.Element {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState<string | null>(null);
-  const [useNotes, setUseNotes] = useState(true);
+  // Off by default. Retrieval makes every answer slower and drags in passages
+  // that may have nothing to do with the question; it should be something you
+  // reach for when the answer ought to come from your own material.
+  const [useNotes, setUseNotes] = useState(false);
   const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
   const listRef = useRef<FlatList<Entry>>(null);
   // One id per conversation, so every answer upserts the same row instead of
@@ -226,6 +231,7 @@ function Chat(): JSX.Element {
       let cites: Cite[] = [];
       let answer = "";
       let tokens = 0;
+      let cut = false;
       const started = Date.now();
 
       try {
@@ -254,8 +260,19 @@ function Chat(): JSX.Element {
             answer += token;
             tokens += 1;
             setStreaming(answer);
+            // Asking for a length is not enforcing one. A small model ignores
+            // "at most three sentences" often enough that the setting looked
+            // broken, so past the cap the generation is stopped outright.
+            // Guarded so a late token cannot interrupt twice.
+            if (tokens > LENGTH_TOKENS[settings.length] && !cut) {
+              cut = true;
+              void rag.interrupt();
+            }
           },
         });
+        // Interrupting lands mid-word, which reads as a crash rather than a
+        // limit, so the tail goes back to the last finished sentence.
+        if (cut) answer = trimToSentence(answer);
         const finished: Entry[] = [
           ...asked,
           { role: "assistant", content: answer, cites, ms: Date.now() - started, tokens },

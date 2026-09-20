@@ -164,7 +164,15 @@ function run(sql: string, args: unknown[] = []): { rows: Row[] } {
   const rows = table(name);
 
   if (/^SELECT/i.test(text)) {
-    if (/COUNT\(\*\)/i.test(text)) return { rows: [{ n: rows.length }] };
+    // Anchored, and only without a GROUP BY. Matching COUNT(*) anywhere meant
+    // listSources — "SELECT json_extract(...), COUNT(*) ... GROUP BY ..." —
+    // came back as one row holding just { n }, so the Library rendered a
+    // phantom pack with no id and React warned about the missing key. The
+    // preview is meant to fail the way the app does, not in ways of its own.
+    if (/^SELECT\s+COUNT\(\*\)/i.test(text) && !/GROUP BY/i.test(text)) {
+      return { rows: [{ n: rows.length }] };
+    }
+    if (/GROUP BY/i.test(text)) return { rows: [] };
     const copy = [...rows];
     if (/ORDER BY\s+\w+\s+DESC/i.test(text)) {
       const key = /ORDER BY\s+(\w+)/i.exec(text)?.[1] ?? "at";

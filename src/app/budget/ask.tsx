@@ -308,9 +308,9 @@ function BudgetChat(): JSX.Element {
                 </View>
 
                 <Typography.Paragraph className="font-read text-[14px] leading-[22px]">
-                  {turn.done ? "Logged" : "Ready to log"} {turn.drafts.length} transaction
-                  {turn.drafts.length === 1 ? "" : "s"}
-                  {turn.done ? "." : " — check them first."}
+                  {`${turn.done ? "Logged" : "Ready to log"} ${turn.drafts.length} transaction${
+                    turn.drafts.length === 1 ? "" : "s"
+                  }${turn.done ? "." : " — check them first."}`}
                 </Typography.Paragraph>
 
                 <View className="overflow-hidden rounded-xl border border-border">

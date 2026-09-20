@@ -17,6 +17,7 @@ import {
   preview,
   readingOrder,
   relativeDate,
+  trimToSentence,
 } from "./formats.ts";
 
 // concatFloat32
@@ -202,5 +203,28 @@ assert.equal(
 );
 // A box with no score at all is trusted, so fixtures and older callers work.
 assert.equal(readingOrder([box("Sodium", 10, 50)]), "Sodium");
+
+/* ---------------------------------------------------- cutting an answer --- */
+
+// Stopping a model mid-word reads as a bug rather than a limit, so the tail
+// goes back to the last finished sentence.
+assert.equal(trimToSentence("One thing. Then another. And a th"), "One thing. Then another.");
+assert.equal(trimToSentence("Done already."), "Done already.");
+assert.equal(trimToSentence("A question? Yes"), "A question?");
+assert.equal(trimToSentence("Stop! More wo"), "Stop!");
+
+// A decimal point is not the end of a sentence — cutting there would turn
+// 2,300 into "2,3" and invent a number.
+assert.equal(trimToSentence("Sodium is 2.3 grams per d"), "Sodium is 2.3 grams per d");
+assert.equal(trimToSentence("It is 2.3. Next sen"), "It is 2.3.");
+
+// A newline ends a line of a list, which is a fine place to stop.
+assert.equal(trimToSentence("- one\n- two\n- thr"), "- one\n- two");
+
+// Nothing to fall back to: half an answer beats none, and a list or a code
+// block may legitimately hold no full stop at all.
+assert.equal(trimToSentence("no punctuation here"), "no punctuation here");
+assert.equal(trimToSentence(""), "");
+assert.equal(trimToSentence("   "), "");
 
 console.log("formats: all checks passed");

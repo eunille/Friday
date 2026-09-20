@@ -225,7 +225,7 @@ function Wallet(): JSX.Element {
           </Typography.Heading>
           {mine.length > 0 && (
             <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
-              {mine.length} entr{mine.length === 1 ? "y" : "ies"}
+              {`${mine.length} ${mine.length === 1 ? "entry" : "entries"}`}
             </Typography.Paragraph>
           )}
         </View>

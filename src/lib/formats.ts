@@ -329,3 +329,28 @@ export function readingOrder(boxes: readonly OcrBox[], minScore = 0.3): string {
     )
     .join("\n");
 }
+
+/**
+ * Cuts an answer back to its last finished sentence.
+ *
+ * Used when generation is stopped for running long. A hard stop lands
+ * mid-word, and "the recommended intake is about 2,3" reads as a bug rather
+ * than a limit — so the tail is dropped back to the last full stop.
+ *
+ * Returns the text untouched when there is no sentence end to fall back to:
+ * half an answer is worth more than none, and a list or a code block may
+ * legitimately contain no full stop at all.
+ */
+export function trimToSentence(text: string): string {
+  const trimmed = text.trimEnd();
+  // Search from the end for terminal punctuation that is not a decimal point.
+  for (let at = trimmed.length - 1; at >= 0; at -= 1) {
+    const char = trimmed[at];
+    if (char !== "." && char !== "!" && char !== "?" && char !== "\n") continue;
+    // "2,300." ends a sentence; "2.3" does not.
+    if (char === "." && /\d/.test(trimmed[at + 1] ?? "")) continue;
+    const kept = trimmed.slice(0, at + 1).trimEnd();
+    if (kept.length > 0) return kept;
+  }
+  return trimmed;
+}

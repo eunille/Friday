@@ -241,7 +241,7 @@ export function RepeatsSheet({
             <Ionicons name="download-outline" size={19} color={palette.accent} />
             <View className="flex-1">
               <Typography.Paragraph className="font-ui-medium text-[14px]">
-                {due} repeat{due === 1 ? "" : "s"} came due
+                {`${due} repeat${due === 1 ? "" : "s"} came due`}
               </Typography.Paragraph>
               <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
                 Add them to the ledger.
