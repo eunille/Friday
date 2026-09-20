@@ -219,7 +219,7 @@ export default function Home(): JSX.Element {
               style={{ color: palette.inkForeground }}
               numberOfLines={1}
             >
-              Offline AI · {state}
+              Friday · {state}
             </Typography.Paragraph>
             <View
               className="flex-row items-center gap-1 rounded-full px-2.5 py-1"

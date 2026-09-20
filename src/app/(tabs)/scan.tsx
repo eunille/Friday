@@ -193,8 +193,8 @@ export default function Scan(): JSX.Element {
         kind: "failed",
         message:
           from === "camera"
-            ? "Camera access is off. Turn it on for Offline AI in Android settings, then try again."
-            : "Photo access is off. Turn it on for Offline AI in Android settings, then try again.",
+            ? "Camera access is off. Turn it on for Friday in Android settings, then try again."
+            : "Photo access is off. Turn it on for Friday in Android settings, then try again.",
       });
       return;
     }
