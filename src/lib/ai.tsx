@@ -18,7 +18,7 @@ import { initExecutorch, models } from "react-native-executorch";
 import { ExpoResourceFetcher } from "react-native-executorch-expo-resource-fetcher";
 import { RAG, uuidv4 } from "react-native-rag";
 
-import { MascotAtWork, MascotDownloading, useCookingWord } from "../components/cooking";
+import { MascotCooking, MascotFocused, useCookingWord } from "../components/cooking";
 import { joinChunks } from "./formats";
 import { createLedgerTables } from "./ledger";
 import { usePalette } from "./theme";
@@ -698,7 +698,7 @@ function Warming({ stage }: { stage: string }): JSX.Element {
 
   return (
     <View className="items-center gap-5">
-      <MascotAtWork />
+      <MascotCooking />
       <Typography.Heading
         type="h2"
         accessibilityLiveRegion="polite"
@@ -826,7 +826,7 @@ export function ModelGate({ children }: { children: ReactNode }): JSX.Element {
       {status.kind === "loading" ? (
         status.fetching ? (
           <View className="gap-5">
-            <MascotDownloading />
+            <MascotFocused />
             <View className="flex-row items-end justify-between">
               <Typography.Heading type="h2" className="font-ui-bold text-[26px] tracking-tight">
                 {status.stage}

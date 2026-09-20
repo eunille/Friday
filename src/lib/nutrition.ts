@@ -358,3 +358,103 @@ export function scorePanel(panel: Panel, age: Age): Assessment {
 export function isEmpty(panel: Panel): boolean {
   return NUTRIENTS.every((nutrient) => panel[nutrient.key] === undefined);
 }
+
+/* --------------------------------------------------------------- guidance
+
+   What the score means in a sentence, worked out here rather than asked of
+   the model. The figures are already WHO-referenced and already per age band;
+   turning them into "two servings pass a child's whole day of sodium" is
+   division, and division is not something a 0.5B model should be trusted with
+   when the answer is about a child's diet.
+
+   It also means the useful sentence exists before any model has loaded, and
+   stays on screen if generation fails.
+   ---------------------------------------------------------------------- */
+
+export type Guidance = {
+  /** The limit nutrient using the most of the day, when one stands out. */
+  driver: Row | null;
+  /** Servings of this that reach the day's reference for `driver`. */
+  servingsToLimit: number | null;
+  /** Arithmetic, stated plainly. Safe to show with nothing loaded. */
+  headline: string;
+  /** What to do about it. */
+  suggestion: string;
+};
+
+/**
+ * "a child", "an adult". Here rather than in the screen because the guidance
+ * sentences are built here and read back out loud by a person; "a adult" is
+ * the kind of thing that makes the rest of the number look careless.
+ */
+export function whoIs(age: Age): string {
+  const label = AGES[age].label.toLowerCase();
+  return `${/^[aeiou]/.test(label) ? "an" : "a"} ${label}`;
+}
+
+export function guidanceFor(panel: Panel, age: Age): Guidance {
+  const { rows } = scorePanel(panel, age);
+  const who = whoIs(age);
+
+  const limited = rows.filter((row) => row.tone !== "good" || row.key === "energyKcal");
+  const driver = rows
+    .filter((row) => ["sodiumMg", "addedSugarG", "satFatG", "energyKcal"].includes(row.key))
+    .reduce<Row | null>((worst, row) => (worst === null || row.share > worst.share ? row : worst), null);
+
+  const good = rows.filter((row) => row.tone === "good" && row.key !== "energyKcal");
+
+  if (driver === null) {
+    return {
+      driver: null,
+      servingsToLimit: null,
+      headline: "The label did not state the figures that usually drive a score.",
+      suggestion: "Check the reading, or scan a clearer photo of the panel.",
+    };
+  }
+
+  const share = driver.share;
+  const nutrient = driver.label.toLowerCase();
+  const percent = Math.round(share * 100);
+  const servings = share > 0 ? Math.ceil(1 / share) : null;
+
+  // Over the whole day in one serving is the case worth stating outright.
+  if (share >= 1) {
+    return {
+      driver,
+      servingsToLimit: 1,
+      headline: `One serving is ${percent}% of ${who}'s ${nutrient} for a whole day.`,
+      suggestion: `That is past the day's reference on its own. For ${who}, share it or keep it to a much smaller portion.`,
+    };
+  }
+
+  if (share >= 0.3) {
+    return {
+      driver,
+      servingsToLimit: servings,
+      headline: `One serving is ${percent}% of ${who}'s daily ${nutrient} — ${servings} would reach it.`,
+      suggestion:
+        share >= 0.5
+          ? `Treat one serving as most of the day's ${nutrient} and keep the rest of the day light on it.`
+          : `Fine now and then. Watch what else that day carries ${nutrient} too.`,
+    };
+  }
+
+  if (share >= 0.15) {
+    return {
+      driver,
+      servingsToLimit: servings,
+      headline: `One serving is ${percent}% of ${who}'s daily ${nutrient}.`,
+      suggestion: `Reasonable in a normal day, as long as it is not the third thing carrying ${nutrient}.`,
+    };
+  }
+
+  return {
+    driver,
+    servingsToLimit: servings,
+    headline:
+      good.length > 0
+        ? `Light on ${nutrient}, and a useful amount of ${good.map((row) => row.label.toLowerCase()).join(" and ")}.`
+        : `One serving is only ${percent}% of ${who}'s daily ${nutrient}.`,
+    suggestion: `Nothing here argues against it for ${who}. ${limited.length > 0 ? "The figures above are still worth a glance." : ""}`.trim(),
+  };
+}

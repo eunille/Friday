@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "rea
 import { Image, Pressable, TextInput, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 
+import { MascotFocused, useScanningWord } from "../../components/cooking";
 import { Mascot, OnDeviceChip, PressCard, Screen } from "../../components/screen";
 import { newNoteId, reindexNote, saveNoteText, useAI } from "../../lib/ai";
 import { clampForPrompt, readingOrder } from "../../lib/formats";
@@ -13,10 +14,13 @@ import {
   AGES,
   EXTRACTION_PROMPT,
   REFERENCE_LABEL,
+  dailyLimits,
+  guidanceFor,
   isEmpty,
   parsePanel,
   readPanel,
   scorePanel,
+  whoIs,
   type Age,
   type Panel,
 } from "../../lib/nutrition";
@@ -42,6 +46,26 @@ const STEPS = [
     title: "Score them",
     note: "Against a published reference, for the age you pick.",
   },
+] as const;
+
+/** Units by key, for the one place a limit is quoted back outside nutrition.ts. */
+const UNITS: Record<string, string> = {
+  energyKcal: "kcal",
+  sodiumMg: "mg",
+  addedSugarG: "g",
+  satFatG: "g",
+  proteinG: "g",
+  fibreG: "g",
+};
+
+/** The six the scorer uses, in the order the panel is read, for the preview. */
+const PREVIEW = [
+  { key: "energyKcal", label: "Energy", unit: "kcal" },
+  { key: "sodiumMg", label: "Sodium", unit: "mg" },
+  { key: "addedSugarG", label: "Added sugar", unit: "g" },
+  { key: "satFatG", label: "Saturated fat", unit: "g" },
+  { key: "proteinG", label: "Protein", unit: "g" },
+  { key: "fibreG", label: "Fibre", unit: "g" },
 ] as const;
 
 type Phase =
@@ -84,6 +108,61 @@ function ScoreRing({ score, colour, track }: { score: number; colour: string; tr
   );
 }
 
+/**
+ * Any wait on this screen.
+ *
+ * The photo stays on screen the whole time, because the thing being worked on
+ * is the most reassuring thing to look at, and the mascot and the changing
+ * word carry the fact that something is still happening. Reading a label
+ * reports no progress of its own — it either finishes or it does not — so
+ * inventing a bar for it would be a lie.
+ */
+function Working({
+  image,
+  note,
+  downloading,
+  progress,
+}: {
+  image: string;
+  note: string;
+  downloading: boolean;
+  progress: number;
+}): JSX.Element {
+  const word = useScanningWord();
+
+  return (
+    <View className="items-center gap-3 rounded-[20px] border border-border bg-surface p-5">
+      <View className="flex-row items-center gap-3">
+        <Image
+          source={{ uri: image }}
+          className="h-[88px] w-[88px] rounded-2xl"
+          resizeMode="cover"
+          accessibilityLabel="The label you photographed"
+        />
+        <MascotFocused />
+      </View>
+      <Typography.Heading
+        type="h2"
+        accessibilityLiveRegion="polite"
+        className="font-ui-bold text-[20px] tracking-tight"
+      >
+        {downloading ? `Getting the reader · ${Math.round(progress * 100)}%` : `${word}…`}
+      </Typography.Heading>
+      <Typography.Paragraph className="text-center font-read text-[13px] leading-5 text-muted">
+        {note}
+      </Typography.Paragraph>
+      {downloading && (
+        <View className="h-1.5 w-full overflow-hidden rounded-full bg-surface-tertiary">
+          <View
+            className="h-1.5 rounded-full bg-warning"
+            style={{ width: `${Math.max(Math.round(progress * 100), 2)}%` }}
+          />
+        </View>
+      )}
+    </View>
+  );
+}
+
 export default function Scan(): JSX.Element {
   const { db, rag, invalidate } = useAI();
   const palette = usePalette();
@@ -93,6 +172,7 @@ export default function Scan(): JSX.Element {
   const [age, setAge] = useState<Age>("adult");
   const [words, setWords] = useState("");
   const [saved, setSaved] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   // The detector and recogniser are ~35 MB together. Nobody should pay for
   // that by opening a tab, so loading waits until a photo actually exists.
@@ -235,14 +315,46 @@ export default function Scan(): JSX.Element {
     [phase, age]
   );
 
-  /** A short plain-language reading. Separate call, so the score never waits on prose. */
+  const guidance = useMemo(
+    () => (phase.kind === "scored" ? guidanceFor(phase.panel, age) : null),
+    [phase, age]
+  );
+
+  /**
+   * What the parser can see in the text as it stands. Re-read on every
+   * keystroke, which costs nothing — readPanel is a line scan, not a model —
+   * and turns the edit box into a live correction loop instead of a guess.
+   */
+  const found = useMemo(() => {
+    const panel = readPanel(text);
+    return PREVIEW.filter((row) => panel[row.key] !== undefined).map((row) => ({
+      label: row.label,
+      value: `${(panel[row.key] as number).toLocaleString("en-US")} ${row.unit}`,
+    }));
+  }, [text]);
+
+  /**
+   * A short plain-language reading. Separate call, so the score never waits on
+   * prose, and the guidance card above is already answering the question if
+   * this never finishes.
+   *
+   * The model is handed the arithmetic rather than asked to do it: every share
+   * and every daily limit below came out of nutrition.ts against the same
+   * reference the score used. Its job is to say what that means for this age
+   * in a sentence or two, not to work out whether 1,000 mg is a lot.
+   */
   const explain = useCallback(async () => {
-    if (!rag || !assessment || phase.kind !== "scored") return;
+    if (!rag || !assessment || !guidance || phase.kind !== "scored") return;
     setWords("");
     let out = "";
+
+    const limits = dailyLimits(age);
     const summary = assessment.rows
-      .map((row) => `${row.label} ${row.amount} (${row.word})`)
-      .join(", ");
+      .map(
+        (row) =>
+          `${row.label}: ${row.amount}, which is ${Math.round(row.share * 100)}% of the ${Math.round(limits[row.key]).toLocaleString("en-US")} ${UNITS[row.key]} a ${AGES[age].label.toLowerCase()} is referenced against for a day (${row.word})`
+      )
+      .join("; ");
 
     try {
       await rag.generate({
@@ -250,12 +362,19 @@ export default function Scan(): JSX.Element {
           {
             role: "system",
             content:
-              "You explain a food label in two or three short sentences of plain English, then suggest one practical thing a person could do. " +
-              "Describe only the figures you are given. Do not diagnose, do not give medical advice, and do not invent numbers.",
+              `You are helping someone read a food label for a ${AGES[age].label.toLowerCase()} aged ${AGES[age].note}. ` +
+              "Every percentage and limit you are given comes from the WHO general reference, already scaled to that age. " +
+              "Write two or three short sentences: what the biggest figure means for a person of that age across a day, " +
+              "and one practical thing to do about it, such as a portion size, how often, or what to pair it with. " +
+              "Use only the numbers given. Never invent a figure, never contradict them, never diagnose, " +
+              "and never tell anyone to eliminate a food for medical reasons.",
           },
           {
             role: "user",
-            content: `For a ${AGES[age].label.toLowerCase()} (${AGES[age].note}), one serving contains: ${summary}.`,
+            content:
+              `One serving contains — ${summary}. ` +
+              `The figure driving this is ${guidance.headline} ` +
+              `Overall the score is ${assessment.score} out of 100: ${assessment.verdict.toLowerCase()}.`,
           },
         ],
         augmentedGeneration: false,
@@ -265,12 +384,11 @@ export default function Scan(): JSX.Element {
         },
       });
     } catch {
-      // The score is the useful part and it is already on screen; a failed
-      // paragraph should not take it away.
+      // The score and the guidance are the useful parts and both are already
+      // on screen; a failed paragraph should not take them away.
       setWords("");
     }
-  }, [rag, assessment, age, phase]);
-
+  }, [rag, assessment, guidance, phase, age]);
   const save = useCallback(async () => {
     if (!db || !rag || !text.trim()) return;
     const body =
@@ -338,36 +456,20 @@ export default function Scan(): JSX.Element {
         )}
 
         {(phase.kind === "reading" || phase.kind === "scoring") && (
-          <View className="items-center gap-3 rounded-[20px] border border-border bg-surface p-5">
-            <Image
-              source={{ uri: phase.image }}
-              className="h-32 w-32 rounded-2xl"
-              resizeMode="cover"
-              accessibilityLabel="The label you photographed"
-            />
-            <Typography.Paragraph className="font-ui-bold text-[13.5px]">
-              {phase.kind === "scoring"
-                ? "Pulling out the numbers"
-                : ocr.isReady
-                  ? "Reading the label"
-                  : "Setting up the reader"}
-            </Typography.Paragraph>
-            <Typography.Paragraph className="text-center font-read text-[13px] leading-5 text-muted">
-              {phase.kind === "scoring"
+          <Working
+            image={phase.image}
+            /* The recogniser download is the one wait here with a real number
+               attached, so it is the only one that gets a bar. */
+            downloading={phase.kind === "reading" && !ocr.isReady}
+            progress={ocr.downloadProgress}
+            note={
+              phase.kind === "scoring"
                 ? "Finding the per-serving values in what was read."
                 : ocr.isReady
                   ? "Finding the text and working out its order."
-                  : `Downloading the recogniser, once only · ${Math.round(ocr.downloadProgress * 100)}%`}
-            </Typography.Paragraph>
-            {phase.kind === "reading" && !ocr.isReady && (
-              <View className="h-1.5 w-full overflow-hidden rounded-full bg-surface-tertiary">
-                <View
-                  className="h-1.5 rounded-full bg-warning"
-                  style={{ width: `${Math.round(ocr.downloadProgress * 100)}%` }}
-                />
-              </View>
-            )}
-          </View>
+                  : "Downloading the recogniser. It only happens once."
+            }
+          />
         )}
 
         {phase.kind === "read" && (
@@ -390,19 +492,79 @@ export default function Scan(): JSX.Element {
               </View>
             </View>
 
+            {/* The values, before the wall of text. Whether the scan worked is
+                answerable in a glance from this list, and it was not from a
+                block of recognised lines. It re-reads as you type, so a
+                correction shows up here before you commit to scoring. */}
+            <View className="overflow-hidden rounded-[20px] border border-border bg-surface">
+              <View className="flex-row items-center justify-between border-b border-separator px-4 py-3">
+                <Typography.Paragraph className="font-ui-bold text-[13px]">
+                  Values found
+                </Typography.Paragraph>
+                <Typography.Paragraph className="font-ui text-[11.5px] text-muted">
+                  {found.length === 0 ? "none yet" : `${found.length} of 6`}
+                </Typography.Paragraph>
+              </View>
+              {found.length === 0 ? (
+                <Typography.Paragraph className="px-4 py-4 text-center font-read text-[13px] leading-5 text-muted">
+                  Nothing recognisable as a nutrition value yet. Correct the text below, or scan a
+                  tighter crop of the panel.
+                </Typography.Paragraph>
+              ) : (
+                found.map((row, index) => (
+                  <View
+                    key={row.label}
+                    className={`flex-row items-center gap-3 px-4 py-2.5 ${
+                      index > 0 ? "border-t border-separator" : ""
+                    }`}
+                  >
+                    <Ionicons name="checkmark-circle" size={15} color={palette.onDevice} />
+                    <Typography.Paragraph className="flex-1 font-ui-medium text-[13px]">
+                      {row.label}
+                    </Typography.Paragraph>
+                    <Typography.Paragraph className="font-ui-bold text-[13px]">
+                      {row.value}
+                    </Typography.Paragraph>
+                  </View>
+                ))
+              )}
+            </View>
+
             {/* Editable on purpose. A recogniser on a crinkled sachet will get
-                something wrong, and a wrong number is worse than a slow one. */}
-            <TextInput
-              className="min-h-40 rounded-2xl border border-border bg-surface px-4 py-3 font-read text-[15px] leading-[23px] text-foreground"
-              value={text}
-              onChangeText={setText}
-              multiline
-              textAlignVertical="top"
-              accessibilityLabel="Text read from the label. Correct anything it got wrong."
-            />
-            <Typography.Paragraph className="font-read text-[12.5px] leading-[19px] text-muted">
-              Correct anything it misread before scoring — glare and creases trip it up.
-            </Typography.Paragraph>
+                something wrong, and a wrong number is worse than a slow one.
+                Folded away, because most scans do not need it and it is a
+                dozen lines of OCR output when they do. */}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: editing }}
+              onPress={() => setEditing((open) => !open)}
+              className="min-h-[40px] flex-row items-center gap-1.5 active:opacity-70"
+            >
+              <Ionicons
+                name={editing ? "chevron-down" : "chevron-forward"}
+                size={14}
+                color={palette.muted}
+              />
+              <Typography.Paragraph className="font-ui-medium text-[13px] text-muted">
+                {editing ? "Hide the raw reading" : "Fix something it misread"}
+              </Typography.Paragraph>
+            </Pressable>
+
+            {editing && (
+              <>
+                <TextInput
+                  className="min-h-40 rounded-2xl border border-border bg-surface px-4 py-3 font-read text-[15px] leading-[23px] text-foreground"
+                  value={text}
+                  onChangeText={setText}
+                  multiline
+                  textAlignVertical="top"
+                  accessibilityLabel="Text read from the label. Correct anything it got wrong."
+                />
+                <Typography.Paragraph className="font-read text-[12.5px] leading-[19px] text-muted">
+                  Glare and creases trip it up. The list above updates as you type.
+                </Typography.Paragraph>
+              </>
+            )}
 
             <View className="flex-row gap-2.5">
               <Pressable
@@ -432,7 +594,7 @@ export default function Scan(): JSX.Element {
           </View>
         )}
 
-        {phase.kind === "scored" && assessment && (
+        {phase.kind === "scored" && assessment && guidance && (
           <View className="gap-3.5">
             <View className="flex-row items-center gap-3">
               <Image
@@ -454,65 +616,10 @@ export default function Scan(): JSX.Element {
               </View>
             </View>
 
-            {/* Score first, reasons second, prose third — and the reference
-                named twice, so this never reads as a diagnosis. */}
-            <View className="flex-row items-center gap-4 rounded-[20px] border border-border bg-surface p-4">
-              <ScoreRing
-                score={assessment.score}
-                colour={scoreColour(assessment.score)}
-                track={palette.border}
-              />
-              <View className="flex-1 gap-1.5">
-                <Typography.Paragraph className="font-ui-medium text-[10px] uppercase tracking-wider text-muted">
-                  Assessment
-                </Typography.Paragraph>
-                <Typography.Paragraph
-                  className="font-ui-bold text-[17px] leading-[22px]"
-                  style={{ color: scoreColour(assessment.score) }}
-                >
-                  {assessment.verdict}
-                </Typography.Paragraph>
-                <Typography.Paragraph className="font-read text-[11.5px] leading-[17px] text-muted-strong">
-                  Scored against the {REFERENCE_LABEL} — not a medical opinion.
-                </Typography.Paragraph>
-              </View>
-            </View>
-
-            <View className="overflow-hidden rounded-[20px] border border-border bg-surface">
-              <View className="border-b border-separator px-4 py-3">
-                <Typography.Paragraph className="font-ui-bold text-[13px]">
-                  Why this score
-                </Typography.Paragraph>
-              </View>
-              {assessment.rows.map((row, index) => (
-                <View
-                  key={row.key}
-                  className={`flex-row items-center gap-3 px-4 py-3 ${
-                    index > 0 ? "border-t border-separator" : ""
-                  }`}
-                >
-                  <View
-                    className="h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: toneColour(row.tone) }}
-                  />
-                  <Typography.Paragraph className="flex-1 font-ui-medium text-[13px]">
-                    {row.label}
-                  </Typography.Paragraph>
-                  <Typography.Paragraph className="font-ui text-[11.5px] text-muted">
-                    {row.amount}
-                  </Typography.Paragraph>
-                  {/* The word carries the judgement too — colour is never the
-                      only signal. */}
-                  <Typography.Paragraph
-                    className="w-[62px] text-right font-ui-bold text-[11.5px]"
-                    style={{ color: toneColour(row.tone) }}
-                  >
-                    {row.word}
-                  </Typography.Paragraph>
-                </View>
-              ))}
-            </View>
-
+            {/* Who it is for comes before the number, because the number is
+                computed for them. It used to sit under the table, so the first
+                score anyone saw was an adult's whether or not that was who
+                they were asking about. */}
             <View className="gap-2">
               <Typography.Paragraph className="font-ui-medium text-[10px] uppercase tracking-wider text-muted">
                 Reading it for
@@ -545,6 +652,97 @@ export default function Scan(): JSX.Element {
               </View>
             </View>
 
+            {/* Score first, reasons second, prose third — and the reference
+                named twice, so this never reads as a diagnosis. */}
+            <View className="flex-row items-center gap-4 rounded-[20px] border border-border bg-surface p-4">
+              <ScoreRing
+                score={assessment.score}
+                colour={scoreColour(assessment.score)}
+                track={palette.border}
+              />
+              <View className="flex-1 gap-1.5">
+                <Typography.Paragraph className="font-ui-medium text-[10px] uppercase tracking-wider text-muted">
+                  Assessment
+                </Typography.Paragraph>
+                <Typography.Paragraph
+                  className="font-ui-bold text-[17px] leading-[22px]"
+                  style={{ color: scoreColour(assessment.score) }}
+                >
+                  {assessment.verdict}
+                </Typography.Paragraph>
+                <Typography.Paragraph className="font-read text-[11.5px] leading-[17px] text-muted-strong">
+                  Scored against the {REFERENCE_LABEL} — not a medical opinion.
+                </Typography.Paragraph>
+              </View>
+            </View>
+
+            {/* What the number means, worked out in TypeScript against the
+                same reference the score uses. It is here before any model has
+                run, it is the same sentence every time, and it survives a
+                failed generation — which is the whole reason the useful part is
+                not left to a 0.5B model to phrase. */}
+            <View
+              className="gap-1.5 rounded-[20px] border p-4"
+              style={{
+                borderColor: `${scoreColour(assessment.score)}55`,
+                backgroundColor: `${scoreColour(assessment.score)}14`,
+              }}
+            >
+              <Typography.Paragraph className="font-ui-bold text-[14.5px] leading-[21px]">
+                {guidance.headline}
+              </Typography.Paragraph>
+              <Typography.Paragraph className="font-read text-[13.5px] leading-[21px] text-muted-strong">
+                {guidance.suggestion}
+              </Typography.Paragraph>
+              {guidance.driver && guidance.servingsToLimit !== null && (
+                <View className="mt-1 flex-row items-center gap-1.5">
+                  <Ionicons name="information-circle-outline" size={13} color={palette.muted} />
+                  <Typography.Paragraph className="flex-1 font-ui text-[11.5px] leading-[17px] text-muted">
+                    {`${whoIs(age).replace(/^./, (c) => c.toUpperCase())}'s day allows about ${dailyLimits(age)[guidance.driver.key].toLocaleString("en-US")} ${UNITS[guidance.driver.key]} of ${guidance.driver.label.toLowerCase()} · ${REFERENCE_LABEL}`}
+                  </Typography.Paragraph>
+                </View>
+              )}
+            </View>
+
+            <View className="overflow-hidden rounded-[20px] border border-border bg-surface">
+              <View className="border-b border-separator px-4 py-3">
+                <Typography.Paragraph className="font-ui-bold text-[13px]">
+                  Why this score
+                </Typography.Paragraph>
+              </View>
+              {assessment.rows.map((row, index) => (
+                <View
+                  key={row.key}
+                  className={`flex-row items-center gap-3 px-4 py-3 ${
+                    index > 0 ? "border-t border-separator" : ""
+                  }`}
+                >
+                  <View
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ backgroundColor: toneColour(row.tone) }}
+                  />
+                  <Typography.Paragraph className="flex-1 font-ui-medium text-[13px]">
+                    {row.label}
+                  </Typography.Paragraph>
+                  <Typography.Paragraph className="font-ui text-[11.5px] text-muted">
+                    {row.amount}
+                  </Typography.Paragraph>
+                  {/* The word carries the judgement too — colour is never the
+                      only signal. */}
+                  {/* One line, always. "Moderate" at this size wrapped to
+                      "Moderat / e" inside a fixed 62px column. */}
+                  <Typography.Paragraph
+                    numberOfLines={1}
+                    className="min-w-[68px] text-right font-ui-bold text-[11.5px]"
+                    style={{ color: toneColour(row.tone) }}
+                  >
+                    {row.word}
+                  </Typography.Paragraph>
+                </View>
+              ))}
+            </View>
+
+
             <View className="gap-2.5 rounded-[20px] border border-border bg-surface p-4">
               <View className="flex-row items-center gap-2">
                 <Mascot pose="glasses" size={34} />
@@ -564,7 +762,7 @@ export default function Scan(): JSX.Element {
                 >
                   <Ionicons name="sparkles-outline" size={16} color={palette.foreground} />
                   <Typography.Paragraph className="font-ui-bold text-[12.5px]">
-                    Explain this for a {AGES[age].label.toLowerCase()}
+                    Explain this for {whoIs(age)}
                   </Typography.Paragraph>
                 </Pressable>
               )}

@@ -7,7 +7,14 @@
  */
 import assert from "node:assert/strict";
 
-import { dailyLimits, isEmpty, parsePanel, readPanel, scorePanel } from "./nutrition.ts";
+import {
+  dailyLimits,
+  guidanceFor,
+  isEmpty,
+  parsePanel,
+  readPanel,
+  scorePanel,
+} from "./nutrition.ts";
 
 /* ------------------------------------------------------------- reference */
 
@@ -160,5 +167,46 @@ assert.ok(isEmpty(readPanel("Sodium\nProtein")));
 
 // The product name, when the first line really is one.
 assert.equal(readPanel("Choco Malt Drink\nSodium 95 mg").name, "Choco Malt Drink");
+
+/* -------------------------------------------------------------- guidance */
+
+// The sentence a person actually reads is arithmetic, so it is asserted like
+// arithmetic. A child's day allows 1,350 mg of sodium; 1,000 mg in a serving
+// is 74% of it, and two servings pass it.
+const salty = guidanceFor({ sodiumMg: 1000 }, "child");
+assert.equal(salty.driver?.key, "sodiumMg");
+assert.equal(salty.servingsToLimit, 2);
+assert.ok(salty.headline.includes("74%"), salty.headline);
+assert.ok(salty.headline.includes("child"), salty.headline);
+
+// The same serving is a smaller share of an adult's day, and must never read
+// as more severe than the child case.
+const adultSalty = guidanceFor({ sodiumMg: 1000 }, "adult");
+assert.ok(adultSalty.driver !== null);
+assert.ok(adultSalty.driver.share < salty.driver.share);
+
+// Past the whole day in one serving is stated outright rather than rounded
+// into "most of".
+const extreme = guidanceFor({ sodiumMg: 4000 }, "child");
+assert.equal(extreme.servingsToLimit, 1);
+assert.ok(/whole day/.test(extreme.headline), extreme.headline);
+
+// The driver is whichever limit nutrient uses most of the day, not the first
+// one found: 5 g of saturated fat is a bigger share of a child's day than
+// 200 mg of sodium.
+assert.equal(guidanceFor({ sodiumMg: 200, satFatG: 5 }, "child").driver?.key, "satFatG");
+
+// A label with nothing to limit still has to say something, and must not
+// claim a percentage it never computed.
+const blank = guidanceFor({}, "adult");
+assert.equal(blank.driver, null);
+assert.equal(blank.servingsToLimit, null);
+assert.ok(!/%/.test(blank.headline), blank.headline);
+
+// Guidance never contradicts the score: a light serving is not told off.
+const light = guidanceFor({ sodiumMg: 40, fibreG: 6 }, "adult");
+assert.ok(light.driver !== null);
+assert.ok(light.driver.share < 0.15);
+assert.ok(!/past|avoid|smaller portion/i.test(light.suggestion), light.suggestion);
 
 console.log("nutrition: all checks passed");

@@ -51,18 +51,18 @@ function Loop({ sheet, frames, every }: { sheet: number; frames: number; every: 
  * so the screen is visibly doing something even though loading a model off
  * disk reports no progress at all. Slow enough that the egg reads.
  */
-export function MascotAtWork(): JSX.Element {
+export function MascotCooking(): JSX.Element {
   return <Loop sheet={COOK} frames={5} every={380} />;
 }
 
 /**
- * The mascot at the laptop, for a download.
+ * The mascot at the laptop, concentrating.
  *
- * Two frames, fast, because typing is the motion. A download does report
- * progress, so this only has to say the phone is still awake — the bar next to
- * it says how far along.
+ * Two frames, fast, because typing is the motion. For the waits that report
+ * their own progress — a download with a bar, a scan with a picture of the
+ * label — so this only has to say the phone is still awake.
  */
-export function MascotDownloading(): JSX.Element {
+export function MascotFocused(): JSX.Element {
   return <Loop sheet={WORK} frames={2} every={260} />;
 }
 
@@ -71,7 +71,7 @@ export function MascotDownloading(): JSX.Element {
  * sign the phone is still working. None of them claim a step is happening —
  * loading a model has no steps to report — they only say it is still going.
  */
-const WORDS = [
+const COOKING = [
   "Preheating",
   "Chopping",
   "Simmering",
@@ -86,21 +86,46 @@ const WORDS = [
 
 const EVERY = 1400;
 
-function pick(except?: string): string {
+/**
+ * Squinting at a label, for the scan. Same trick, different room — a panel
+ * being read is not a kitchen, and "Simmering" over a photo of a sachet reads
+ * as the wrong screen.
+ */
+const SCANNING = [
+  "Focusing",
+  "Squinting",
+  "Tracing the letters",
+  "Lining up the columns",
+  "Checking the units",
+  "Reading the small print",
+  "Finding the serving",
+  "Doing the sums",
+] as const;
+
+function pick(words: readonly string[], except?: string): string {
   // Never the same word twice running: a label that "changes" to itself reads
   // as a hung screen, which is the one thing this is here to disprove.
-  const others = WORDS.filter((word) => word !== except);
+  const others = words.filter((word) => word !== except);
   return others[Math.floor(Math.random() * others.length)];
+}
+
+function useRotatingWord(words: readonly string[]): string {
+  const [word, setWord] = useState(() => pick(words));
+
+  useEffect(() => {
+    const id = setInterval(() => setWord((current) => pick(words, current)), EVERY);
+    return () => clearInterval(id);
+  }, [words]);
+
+  return word;
 }
 
 /** The rotating word. Caller styles it; this only owns which word is showing. */
 export function useCookingWord(): string {
-  const [word, setWord] = useState(() => pick());
+  return useRotatingWord(COOKING);
+}
 
-  useEffect(() => {
-    const id = setInterval(() => setWord((current) => pick(current)), EVERY);
-    return () => clearInterval(id);
-  }, []);
-
-  return word;
+/** The same, for a label being read. */
+export function useScanningWord(): string {
+  return useRotatingWord(SCANNING);
 }
