@@ -273,6 +273,10 @@ type AIContextValue = {
   retry: () => void;
   /** Abort the running download and fall back to the last model that worked. */
   cancelDownload: () => void;
+  /** Whether the voice model is already on the phone. */
+  voiceReady: boolean;
+  /** Record that it is, once a download has actually finished. */
+  markVoiceReady: () => void;
 };
 
 const AIContext = createContext<AIContextValue | null>(null);
@@ -318,6 +322,18 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
   const [attempt, setAttempt] = useState(0);
 
   const rag = loaded && loaded.tier === tier ? loaded.rag : null;
+
+  /**
+   * Remember that the voice model finished downloading.
+   *
+   * Same `fetched:` namespace as the language models, because it answers the
+   * same question — is this already on the phone — and the answer decides
+   * whether tapping the mic is free or costs 222 MB.
+   */
+  const markVoiceReady = useCallback(() => {
+    setFetched((prev) => (prev.has("speech") ? prev : new Set(prev).add("speech")));
+    void store?.db.execute(REMEMBER_FETCHED, [`${FETCHED}speech`]);
+  }, [store]);
 
   // Boot: embedding model + vector store + saved preferences. Runs once.
   useEffect(() => {
@@ -605,6 +621,8 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
       invalidate,
       retry,
       cancelDownload,
+      voiceReady: fetched.has("speech"),
+      markVoiceReady,
     };
   }, [
     rag,
@@ -624,6 +642,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
     retry,
     cancelDownload,
     fetched,
+    markVoiceReady,
   ]);
 
   return <AIContext.Provider value={value}>{children}</AIContext.Provider>;

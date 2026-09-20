@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import { AudioManager, AudioRecorder } from "react-native-audio-api";
 import { models, useSpeechToText } from "react-native-executorch";
 
+import { useConfirm } from "../components/dialog";
+import { useAI } from "./ai";
 import { concatFloat32 } from "./formats";
 
 /**
@@ -23,6 +25,8 @@ export type Dictation = {
   notice: string | null;
   dismiss: () => void;
   toggle: () => void;
+  /** Render this somewhere: it is the one-time "this costs 222 MB" question. */
+  dialog: JSX.Element;
 };
 
 /**
@@ -37,6 +41,8 @@ export type Dictation = {
  * costs a download.
  */
 export function useDictation(onText: (text: string) => void): Dictation {
+  const { voiceReady, markVoiceReady } = useAI();
+  const confirm = useConfirm();
   const [armed, setArmed] = useState(false);
   const [recording, setRecording] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -114,9 +120,37 @@ export function useDictation(onText: (text: string) => void): Dictation {
     }
   }, [stt]);
 
+  /**
+   * Asked once, the first time, and never again once the file is on the phone.
+   *
+   * 222 MB is not a rounding error on a metered connection, and the mic is a
+   * button people press to find out what it does. The Library says the size up
+   * front; this says it at the moment it would actually be spent.
+   */
   const toggle = useCallback(() => {
-    void (recording ? stop() : start());
-  }, [recording, start, stop]);
+    if (recording) {
+      void stop();
+      return;
+    }
+    if (voiceReady) {
+      void start();
+      return;
+    }
+    confirm.ask({
+      title: "Download the voice model?",
+      message:
+        "Dictation needs Whisper tiny, which is 222 MB. It downloads once — after that the mic works with the radio off.",
+      action: "Download",
+      onConfirm: () => void start(),
+    });
+  }, [recording, start, stop, voiceReady, confirm]);
+
+  // Written the moment the files land rather than after a transcript, so
+  // cancelling a recording does not lose the fact that the download happened
+  // and ask for it again next time.
+  useEffect(() => {
+    if (stt.downloadProgress >= 1 && !voiceReady) markVoiceReady();
+  }, [stt.downloadProgress, voiceReady, markVoiceReady]);
 
   return {
     recording,
@@ -125,5 +159,6 @@ export function useDictation(onText: (text: string) => void): Dictation {
     notice,
     dismiss: () => setNotice(null),
     toggle,
+    dialog: confirm.dialog,
   };
 }

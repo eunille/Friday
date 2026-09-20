@@ -286,6 +286,7 @@ function Editor({ id }: { id: string }): JSX.Element {
         </Typography.Paragraph>
       </View>
       {confirm.dialog}
+      {dictation.dialog}
     </View>
   );
 }

@@ -147,6 +147,9 @@ export function Composer({
       </View>
 
       {footnote}
+      {/* The one-time "this costs 222 MB" question, owned by useDictation so
+          the chat and the note editor cannot answer it differently. */}
+      {dictation.dialog}
     </View>
   );
 }

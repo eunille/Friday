@@ -21,23 +21,29 @@ function Sheet({
 }): JSX.Element {
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={onDismiss}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Dismiss"
-        onPress={onDismiss}
-        style={{
-          flex: 1,
-          backgroundColor: "rgba(0,0,0,0.55)",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 28,
-        }}
-      >
-        {/* Swallows the press so a tap inside the card does not dismiss it. */}
-        <Pressable onPress={() => {}} style={{ width: "100%", maxWidth: 380 }}>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 28 }}>
+        {/* The backdrop is a sibling of the card, not its parent. Wrapping the
+            card in the dismiss-Pressable is the obvious way to write this and
+            needs a second Pressable inside to swallow the tap — and on web
+            both render as <button>, so the card's own buttons end up nested
+            inside one, which is invalid HTML and warns at runtime. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss"
+          onPress={onDismiss}
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0,0,0,0.55)",
+          }}
+        />
+        <View style={{ width: "100%", maxWidth: 380 }}>
           <View className="gap-3 rounded-[22px] border border-border bg-surface p-5">{children}</View>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
