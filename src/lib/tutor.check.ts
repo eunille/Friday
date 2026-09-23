@@ -8,7 +8,15 @@
 import assert from "node:assert";
 
 import { parseQuiz } from "./formats.ts";
-import { detectMode, detectQuiz, scoreLine, testPrompt, verdict } from "./tutor.ts";
+import {
+  detectMode,
+  detectNotes,
+  detectQuiz,
+  pickNotes,
+  scoreLine,
+  testPrompt,
+  verdict,
+} from "./tutor.ts";
 
 const is = (text: string, mode: string, topic = "") =>
   assert.deepEqual(detectMode(text), { mode, topic }, text);
@@ -79,6 +87,41 @@ assert.equal(detectMode("Give me a quiz about photosynthesis"), null, "being giv
 for (const plain of ["What is a quiz?", "I made a quiz yesterday", "quiz night ideas", ""]) {
   assert.equal(detectQuiz(plain), null, `should be a plain message: "${plain}"`);
 }
+
+// Reading and summarising your own notes.
+const notes = (text: string, action: string, about = "", since: string | null = null) =>
+  assert.deepEqual(detectNotes(text), { action, about, since }, text);
+notes("Read my networking notes", "read", "networking");
+notes("read my notes", "read");
+notes("Can you read me my notes on TCP aloud?", "read", "TCP");
+notes("Summarize my notes", "summarise");
+notes("Summarise what I studied today", "summarise", "", "today");
+notes("summarise everything I saved this week", "summarise", "", "week");
+notes("Give me a summary of my OSI notes", "summarise", "OSI");
+for (const plain of ["Summarise the French Revolution", "read this article", "What is a note?", ""]) {
+  assert.equal(detectNotes(plain), null, `should be a plain message: "${plain}"`);
+}
+// Nothing else claims them.
+assert.equal(detectMode("Read my networking notes"), null);
+assert.equal(detectQuiz("Summarise my notes"), null);
+
+const now = new Date("2026-09-24T15:00:00");
+const shelf = [
+  { id: "a", title: "Subnetting", subject: "Networking", updatedAt: "2026-09-24T09:00:00" },
+  { id: "b", title: "TCP handshake", subject: "Networking", updatedAt: "2026-09-20T09:00:00" },
+  { id: "c", title: "Networking jobs", subject: null, updatedAt: "2026-09-01T09:00:00" },
+  { id: "d", title: "Cells", subject: "Biology", updatedAt: "2026-09-24T08:00:00" },
+];
+const ids = (ask: string, chosen: string[] | null = null) =>
+  pickNotes(shelf, detectNotes(ask)!, chosen, now).map((note) => note.id);
+// The subject wins over a title that merely mentions it.
+assert.deepEqual(ids("read my networking notes"), ["a", "b"]);
+assert.deepEqual(ids("read my TCP notes"), ["b"]);
+assert.deepEqual(ids("summarise what I studied today"), ["a", "d"]);
+assert.deepEqual(ids("summarise everything I saved this week"), ["a", "b", "d"]);
+assert.deepEqual(ids("summarise my notes", ["d"]), ["d"]);
+assert.deepEqual(ids("summarise my notes"), ["a", "b", "c", "d"]);
+assert.deepEqual(ids("read my chemistry notes"), []);
 
 // The prompt asks for the exact format parseQuiz reads, so a model that
 // follows it produces answerable questions. Checked with a reply in that shape.

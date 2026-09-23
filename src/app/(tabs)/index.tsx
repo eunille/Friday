@@ -48,7 +48,9 @@ import {
   TEACH_PROMPT,
   TEST_LENGTH,
   detectMode,
+  detectNotes,
   detectQuiz,
+  pickNotes,
   scoreLine,
   testPrompt,
   verdict,
@@ -374,7 +376,13 @@ function Chat(): JSX.Element {
   // Every path through here returns what it answered, so talk mode can say it
   // aloud — or null when there is nothing worth saying.
   const ask = useCallback(
-    async (question: string, history: Entry[], as: Mode): Promise<string | null> => {
+    async (
+      question: string,
+      history: Entry[],
+      as: Mode,
+      /** Context already chosen — "summarise my notes" — instead of a search. */
+      given?: { context: string; cites: Cite[] }
+    ): Promise<string | null> => {
       if (!rag || !question || busy) return null;
 
       const asked: Entry[] = [...history, { role: "user", content: question }];
@@ -401,7 +409,10 @@ function Chat(): JSX.Element {
         // every question and searches by meaning alone; this one stays bounded
         // in SQLite and adds a keyword pass for the exact terms — "RFC 1918",
         // an IP, a formula — that embeddings blur. See lib/retrieval.ts.
-        if (scope.kind !== "none" && db && embed) {
+        if (given) {
+          cites = given.cites;
+          input.push({ role: "user", content: `Message: ${question}\nContext: ${given.context}` });
+        } else if (scope.kind !== "none" && db && embed) {
           const chunks = await retrieve({ db, embed, query: question, scope });
           cites = citesOf(chunks);
           // Same `Message: … Context: …` shape the library appended, so the
@@ -747,6 +758,64 @@ function Chat(): JSX.Element {
         return reply.quiz ? `${reply.content} Tap Open quiz when you're ready.` : reply.content;
       }
 
+      // "Read my networking notes", "Summarise what I studied today": the
+      // notes themselves, found by subject, title or date — not a search.
+      const wantNotes = detectNotes(text);
+      if (wantNotes && db) {
+        setTest(null);
+        setDraft("");
+        const all = await listNotes(db);
+        const chosen =
+          scope.kind === "sources"
+            ? scope.ids
+            : scope.kind === "subject"
+              ? all.filter((note) => note.subject === scope.id).map((note) => note.id)
+              : null;
+        const picked = pickNotes(all, wantNotes, chosen);
+        const asked: Entry[] = [...entries, { role: "user", content: text }];
+
+        if (picked.length === 0) {
+          const reply = `I couldn't find any notes${
+            wantNotes.about ? ` on ${wantNotes.about}` : ""
+          }${wantNotes.since === "today" ? " from today" : wantNotes.since === "week" ? " from this week" : ""}.`;
+          const next: Entry[] = [...asked, { role: "assistant", content: reply }];
+          setEntries(next);
+          void persist(next);
+          return reply;
+        }
+
+        if (wantNotes.action === "summarise") {
+          return ask(text, entries, "ask", {
+            context: clampForPrompt(
+              picked.map((note) => `[${note.title}]\n${note.body}`).join("\n\n")
+            ),
+            cites: picked.map((note) => ({ id: note.id, title: note.title })),
+          });
+        }
+
+        // Read out: the notes as written, a few at a time — a whole library
+        // read aloud is not something anyone sits through.
+        const read = picked.slice(0, 3);
+        const more = picked.length - read.length;
+        const whole = read.map((note) => `${note.title}\n${note.body.trim()}`).join("\n\n");
+        const content =
+          (whole.length > 3000 ? trimToSentence(whole.slice(0, 3000)) : whole) +
+          (more > 0 ? `\n\n…and ${more} more note${more === 1 ? "" : "s"}.` : "");
+        const next: Entry[] = [
+          ...asked,
+          {
+            role: "assistant",
+            content,
+            cites: read.map((note) => ({ id: note.id, title: note.title })),
+          },
+        ];
+        setEntries(next);
+        void persist(next);
+        // Typed, it starts reading now; spoken, talk mode says what comes back.
+        if (!spoken) reader.toggle(`${conversation}:${next.length - 1}`, content);
+        return content;
+      }
+
       const hit = detectMode(text);
       let history = entries;
       let as = mode;
@@ -787,7 +856,7 @@ function Chat(): JSX.Element {
 
       return ask(text, history, as);
     },
-    [busy, entries, test, mode, scope, answer, startTest, ask, persist]
+    [busy, entries, test, mode, scope, answer, startTest, ask, persist, db, reader, conversation]
   );
 
   /* ---------------------------------------------------------- talk mode --- */

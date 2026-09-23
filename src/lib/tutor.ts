@@ -119,6 +119,69 @@ export function detectQuiz(text: string): { topic: string; count: number } | nul
   return { topic: NO_TOPIC.test(topic) ? "" : topic, count };
 }
 
+/** "Read my networking notes", "Summarise what I studied today". */
+export type NotesAsk = {
+  action: "read" | "summarise";
+  /** A subject or title word, or "" for whatever is chosen. */
+  about: string;
+  since: "today" | "week" | null;
+};
+
+const NOTES_VERB =
+  /^(?:(read)(?: me)?(?: out| aloud| back)?|summari[sz]e|sum up|recap|give me (?:a )?(?:summary|recap) of)\s+/i;
+/** Only about the student's own notes — "summarise the French Revolution" is a question for the model. */
+const OWN_NOTES = /\bnotes?\b|\b(?:studied|saved|wrote|written|learned|learnt|added)\b/i;
+const NOTES_FILLER =
+  /\b(?:what|everything|all|that|i've|ive|i|have|studied|saved|wrote|written|learned|learnt|added|my|the|notes?|on|about|out loud|aloud|to me|for me|please)\b/gi;
+
+/**
+ * A request to read out or summarise the student's own notes, or null.
+ * Checked before detectMode, after detectQuiz.
+ */
+export function detectNotes(text: string): NotesAsk | null {
+  const said = text.trim().replace(/[.!?]+$/, "").replace(LEAD, "");
+  const match = NOTES_VERB.exec(said);
+  if (!match) return null;
+  let rest = said.slice(match[0].length);
+  if (!OWN_NOTES.test(rest)) return null;
+
+  const since = /\btoday\b/i.test(rest)
+    ? "today"
+    : /\b(?:this|past|last) week\b/i.test(rest)
+      ? "week"
+      : null;
+  rest = rest.replace(/\btoday\b|\b(?:this|past|last) week\b/gi, "");
+  const about = rest.replace(NOTES_FILLER, "").replace(/\s+/g, " ").trim();
+  return { action: match[1] ? "read" : "summarise", about, since };
+}
+
+/**
+ * Which notes a NotesAsk means. A named subject wins over a title match, so
+ * "networking" finds the Networking subject before a stray title. `chosen` is
+ * the picker's notes, or null when it is on Everything or Nothing.
+ */
+export function pickNotes<
+  T extends { id: string; title: string; updatedAt: string; subject?: string | null },
+>(notes: readonly T[], ask: NotesAsk, chosen: readonly string[] | null, now = new Date()): T[] {
+  let pool = notes;
+  if (ask.since) {
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    if (ask.since === "week") start.setDate(start.getDate() - 6);
+    pool = pool.filter((note) => new Date(note.updatedAt) >= start);
+  }
+  if (ask.about) {
+    const key = ask.about.toLowerCase();
+    const filed = pool.filter((note) => note.subject?.toLowerCase() === key);
+    if (filed.length > 0) return filed;
+    return pool.filter(
+      (note) =>
+        note.title.toLowerCase().includes(key) || note.subject?.toLowerCase().includes(key)
+    );
+  }
+  return pool.filter((note) => !chosen || chosen.includes(note.id));
+}
+
 /**
  * Added to the system prompt in Teach mode.
  *
