@@ -336,7 +336,8 @@ export class RAG {
     // it is a placeholder. Same rule as the sentence below: never a
     // plausible-looking answer, which is the one genuinely harmful thing a
     // preview could do.
-    const reply = /multiple-choice questions/.test(input?.[0]?.content ?? "")
+    // Keyed on the format line both the Tutor and the Quiz page ask for.
+    const reply = /Correct: <letter>/.test(input?.[0]?.content ?? "")
       ? PREVIEW_TEST
       : UNAVAILABLE;
     callback?.(reply);

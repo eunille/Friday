@@ -5,8 +5,9 @@ import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import { Pressable, View } from "react-native";
 
 import { ChoiceRow, Group, PageHeader, PageScroll, SectionTitle } from "../../components/screen";
-import { ModelGate, getNote, saveQuizResult, useAI } from "../../lib/ai";
+import { ModelGate, getNote, readSource, saveQuizResult, useAI } from "../../lib/ai";
 import { clampForPrompt, parseFlashcards, parseQuiz } from "../../lib/formats";
+import { asContext, retrieve, type Scope } from "../../lib/retrieval";
 import { usePalette } from "../../lib/theme";
 
 const MODES = {
@@ -72,12 +73,29 @@ function toItems(text: string, mode: Mode): Item[] {
   return parseQuiz(text, mode === "boolean");
 }
 
-function buildPrompt(mode: Mode, difficulty: Difficulty, count: number): string {
+/**
+ * `topic` comes from the Tutor. With notes behind it the questions stay inside
+ * them; with none, a topic is all there is and the model answers from what it
+ * knows — which the Tutor only offers when you chose "Nothing" to draw on.
+ */
+function buildPrompt(
+  mode: Mode,
+  difficulty: Difficulty,
+  count: number,
+  topic = "",
+  hasMaterial = true
+): string {
+  const about = !topic
+    ? "about the note below"
+    : hasMaterial
+      ? `about ${topic}, using only the notes below`
+      : `about ${topic}`;
   return [
-    `Write exactly ${count} questions about the note below.`,
+    `Write exactly ${count} questions ${about}.`,
     MODES[mode].format,
     DIFFICULTIES[difficulty].rule,
-    "Use only what the note says. Do not add any other text.",
+    !topic ? "Use only what the note says." : "",
+    "Do not add any other text.",
   ]
     .filter(Boolean)
     .join("\n");
@@ -130,39 +148,95 @@ function Option({
   );
 }
 
-function Quiz({ id }: { id: string }): JSX.Element {
-  const { rag, db, invalidate } = useAI();
+/**
+ * Opened from a note, `id` is that note. Opened from the Tutor, `topic` and
+ * `sources` say what to ask about instead: `sources` is "" for nothing, "*"
+ * for everything, or a comma-separated list of note and pack ids.
+ */
+function Quiz({
+  id,
+  topic = "",
+  sources,
+  count: preset,
+}: {
+  id: string;
+  topic?: string;
+  sources?: string;
+  count?: number;
+}): JSX.Element {
+  const { rag, db, embed, invalidate } = useAI();
   const router = useRouter();
   const palette = usePalette();
+  const fromTutor = sources !== undefined;
 
-  const [title, setTitle] = useState("");
+  const [noteTitle, setTitle] = useState("");
+  // From the Tutor the heading is the topic — known up front, so derived
+  // rather than stored and set a render late.
+  const title = fromTutor ? topic || "Your notes" : noteTitle;
   const [body, setBody] = useState("");
+  // The note a result is filed under. Home links every result back to one, so
+  // a quiz across several notes, or on a topic alone, has nothing honest to
+  // file under and is not recorded.
+  const [recordAs, setRecordAs] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("multiple");
   const [difficulty, setDifficulty] = useState<Difficulty>("normal");
-  const [count, setCount] = useState<number>(5);
+  const [count, setCount] = useState<number>(preset === 10 ? 10 : 5);
   const [phase, setPhase] = useState<Phase>({ kind: "setup" });
   const [picked, setPicked] = useState<number | null>(null);
 
   useEffect(() => {
     if (!db) return;
-    void getNote(db, id).then((note) => {
-      if (!note) return;
-      setTitle(note.title);
-      setBody(note.body);
-    });
-  }, [db, id]);
+    if (!fromTutor) {
+      void getNote(db, id).then((note) => {
+        if (!note) return;
+        setTitle(note.title);
+        setBody(note.body);
+        setRecordAs(note.id);
+      });
+      return;
+    }
+
+    const ids = sources && sources !== "*" ? sources.split(",") : [];
+    const scope: Scope =
+      sources === "*" ? { kind: "all" } : ids.length > 0 ? { kind: "sources", ids } : { kind: "none" };
+
+    void (async () => {
+      if (ids.length === 1) {
+        const note = await getNote(db, ids[0]);
+        if (note) setRecordAs(note.id);
+      }
+      if (!topic && ids.length > 0) {
+        // "Quiz me on my notes": the notes themselves, whole.
+        const bodies = await Promise.all(ids.map((source) => readSource(db, source)));
+        setBody(bodies.join("\n\n"));
+      } else if (topic && scope.kind !== "none" && embed) {
+        // A topic within your notes: only the passages about it, so a quiz on
+        // subnetting from a networking library is about subnetting.
+        const chunks = await retrieve({ db, embed, query: topic, scope, limit: 8 });
+        setBody(asContext(chunks, 4000));
+      }
+    })();
+  }, [db, embed, id, fromTutor, topic, sources]);
+
+  // A topic with nothing chosen to draw on is still a quiz — from what the
+  // model knows. A note with nothing in it is not.
+  const ready = body.trim() !== "" || (fromTutor && topic !== "");
 
   const start = useCallback(async () => {
-    if (!rag || !body.trim()) return;
+    if (!rag || !ready) return;
     setPhase({ kind: "writing", ready: 0 });
     setPicked(null);
 
+    const material = body.trim();
     let out = "";
     try {
       await rag.generate({
         input: [
-          { role: "system", content: buildPrompt(mode, difficulty, count) },
-          { role: "user", content: clampForPrompt(body) },
+          {
+            role: "system",
+            content: buildPrompt(mode, difficulty, count, topic, material !== ""),
+          },
+          { role: "user", content: material ? clampForPrompt(material) : `Topic: ${topic}` },
         ],
         augmentedGeneration: false,
         callback: (token) => {
@@ -186,7 +260,7 @@ function Quiz({ id }: { id: string }): JSX.Element {
     } catch (error) {
       setPhase({ kind: "failed", message: error instanceof Error ? error.message : String(error) });
     }
-  }, [rag, body, mode, difficulty, count]);
+  }, [rag, ready, body, mode, difficulty, count, topic]);
 
   const next = useCallback(() => {
     if (phase.kind !== "taking" || picked === null) return;
@@ -204,18 +278,18 @@ function Quiz({ id }: { id: string }): JSX.Element {
   // which notes are worth another look, so a double-write would skew it.
   const recorded = useRef(false);
   useEffect(() => {
-    if (phase.kind !== "done" || recorded.current || !db) return;
+    if (phase.kind !== "done" || recorded.current || !db || !recordAs) return;
     recorded.current = true;
     const correct = phase.answers.filter(
       (answer, index) => answer === phase.items[index].correctIndex
     ).length;
     void saveQuizResult(db, {
-      noteId: id,
+      noteId: recordAs,
       title: title || "Untitled",
       score: correct,
       total: phase.items.length,
     }).then(invalidate);
-  }, [phase, db, id, title, invalidate]);
+  }, [phase, db, recordAs, title, invalidate]);
 
   if (phase.kind === "setup" || phase.kind === "failed") {
     return (
@@ -272,13 +346,15 @@ function Quiz({ id }: { id: string }): JSX.Element {
             ))}
           </Group>
 
-          <Button isDisabled={!body.trim()} onPress={() => void start()}>
+          <Button isDisabled={!ready} onPress={() => void start()}>
             Start quiz
           </Button>
 
-          {!body.trim() && (
+          {!ready && (
             <Typography.Paragraph className="font-read text-muted text-[15px] leading-6">
-              This note is empty. Write something first and there will be something to ask about.
+              {fromTutor
+                ? "Nothing in the chosen notes to ask about yet."
+                : "This note is empty. Write something first and there will be something to ask about."}
             </Typography.Paragraph>
           )}
         </PageScroll>
@@ -423,11 +499,16 @@ function Quiz({ id }: { id: string }): JSX.Element {
 }
 
 export default function QuizScreen(): JSX.Element {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, topic, sources, count } = useLocalSearchParams<{
+    id: string;
+    topic?: string;
+    sources?: string;
+    count?: string;
+  }>();
 
   return (
     <ModelGate>
-      <Quiz id={id} />
+      <Quiz id={id} topic={topic} sources={sources} count={count ? Number(count) : undefined} />
     </ModelGate>
   );
 }

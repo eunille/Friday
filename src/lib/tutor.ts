@@ -51,9 +51,11 @@ const RULES: readonly { mode: Mode; pattern: RegExp }[] = [
   { mode: "ask", pattern: /^(?:normal|ask|chat) mode\b/i },
 
   { mode: "test", pattern: /^(?:test|quiz|drill) me\b(?:\s+(?:on|about|in|over))?/i },
+  // "give me a quiz" is not here: asking to be *given* one is asking for the
+  // standalone quiz (see detectQuiz), while "do a test" is doing it now.
   {
     mode: "test",
-    pattern: /^(?:do|start|take|give me|have) (?:a |another )?(?:test|quiz)\b(?:\s+(?:on|about|in))?/i,
+    pattern: /^(?:do|start|take|have) (?:a |another )?(?:test|quiz)\b(?:\s+(?:on|about|in))?/i,
   },
   { mode: "test", pattern: /^ask me (?:some |a few )?questions\b(?:\s+(?:on|about|in))?/i },
 
@@ -88,6 +90,33 @@ export function detectMode(text: string): { mode: Mode; topic: string } | null {
     return { mode: rule.mode, topic: rule.mode === "ask" || NO_TOPIC.test(topic) ? "" : topic };
   }
   return null;
+}
+
+/** The lengths the Quiz page offers. A request for any other is rounded to one. */
+export const QUIZ_COUNTS = [5, 10] as const;
+
+const QUIZ =
+  /^(?:make|create|generate|build|write|prepare|give|set)(?: me| us)? (?:a |an |another )?(?:(\d+)[- ]?(?:question|item|q)s?[- ]?)?(?:practice |short |quick |full |proper )?(?:quiz|exam|test)\b(?:\s+(?:about|on|for|covering|over|in))?/i;
+
+/**
+ * A request for a standalone quiz — the kind with a score at the end, taken on
+ * the Quiz page — or null.
+ *
+ * Checked before detectMode. "Test me on TCP" is a conversation: questions
+ * one at a time in the chat. "Make me a 10-question quiz on TCP" asks for a
+ * thing, so it gets a card that opens one.
+ */
+export function detectQuiz(text: string): { topic: string; count: number } | null {
+  const said = text.trim().replace(/[.!?]+$/, "").replace(LEAD, "");
+  const match = QUIZ.exec(said);
+  if (!match) return null;
+
+  const asked = Number(match[1] ?? 0);
+  // Nearest offered length. Twenty rounds down to ten rather than being
+  // refused: the page cannot write twenty, and ten is the closest it can.
+  const count = asked >= (QUIZ_COUNTS[0] + QUIZ_COUNTS[1]) / 2 ? QUIZ_COUNTS[1] : QUIZ_COUNTS[0];
+  const topic = said.slice(match[0].length).trim();
+  return { topic: NO_TOPIC.test(topic) ? "" : topic, count };
 }
 
 /**

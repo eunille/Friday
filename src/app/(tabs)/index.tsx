@@ -17,8 +17,10 @@ import {
   KnowledgeSheet,
   ModeSheet,
   QuestionCard,
+  QuizCard,
   scopeLabel,
   type Question,
+  type QuizOffer,
 } from "../../components/tutor";
 import {
   LENGTHS,
@@ -42,6 +44,7 @@ import {
   TEACH_PROMPT,
   TEST_LENGTH,
   detectMode,
+  detectQuiz,
   scoreLine,
   testPrompt,
   type Mode,
@@ -79,6 +82,8 @@ type Entry = {
   divider?: true;
   /** A test question, answered in place. */
   question?: Question;
+  /** A standalone quiz, as a card that opens the Quiz page. */
+  quiz?: QuizOffer;
 };
 
 const asMessages = (entries: Entry[]): Message[] =>
@@ -588,6 +593,42 @@ function Chat(): JSX.Element {
       const text = raw.trim();
       if (!text || busy) return;
 
+      // Asked to be *given* a quiz: a card that opens the Quiz page, in any
+      // mode, without leaving it. Nothing to generate here — the page does
+      // that — so this answers instantly.
+      const wanted = detectQuiz(text);
+      if (wanted) {
+        setTest(null);
+        const ids = scope.kind === "sources" ? scope.ids : [];
+        const reply: Entry =
+          !wanted.topic && scope.kind !== "sources"
+            ? {
+                role: "assistant",
+                content:
+                  "What should the quiz be on? Name a topic, or pick some notes with the notes chip below.",
+              }
+            : {
+                role: "assistant",
+                content: `A ${wanted.count}-question quiz${wanted.topic ? ` on ${wanted.topic}` : ""}, ready to open.`,
+                quiz: {
+                  topic: wanted.topic,
+                  count: wanted.count,
+                  sources: scope.kind === "all" ? "*" : ids.join(","),
+                  basis:
+                    scope.kind === "all"
+                      ? "all your notes"
+                      : ids.length > 0
+                        ? `${ids.length} selected`
+                        : "general knowledge",
+                },
+              };
+        const next: Entry[] = [...entries, { role: "user", content: text }, reply];
+        setEntries(next);
+        setDraft("");
+        void persist(next);
+        return;
+      }
+
       const hit = detectMode(text);
       let history = entries;
       let as = mode;
@@ -633,7 +674,7 @@ function Chat(): JSX.Element {
 
       void ask(text, history, as);
     },
-    [busy, entries, mode, startTest, ask, persist]
+    [busy, entries, mode, scope, startTest, ask, persist]
   );
 
   /** Drops the last answer and asks the same question again. */
@@ -723,6 +764,8 @@ function Chat(): JSX.Element {
         renderItem={({ item, index }) =>
           item.divider ? (
             <Divider text={item.content} />
+          ) : item.quiz ? (
+            <QuizCard offer={item.quiz} />
           ) : item.question ? (
             <QuestionCard
               text={item.content}

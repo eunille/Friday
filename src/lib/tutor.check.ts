@@ -8,7 +8,7 @@
 import assert from "node:assert";
 
 import { parseQuiz } from "./formats.ts";
-import { detectMode, scoreLine, testPrompt, verdict } from "./tutor.ts";
+import { detectMode, detectQuiz, scoreLine, testPrompt, verdict } from "./tutor.ts";
 
 const is = (text: string, mode: string, topic = "") =>
   assert.deepEqual(detectMode(text), { mode, topic }, text);
@@ -18,7 +18,6 @@ is("Test me on TCP", "test", "TCP");
 is("test me about the OSI model", "test", "the OSI model");
 is("Can you quiz me on subnetting?", "test", "subnetting");
 is("Let's do a test on networking", "test", "networking");
-is("give me a quiz about photosynthesis", "test", "photosynthesis");
 is("Ask me questions about World War II", "test", "World War II");
 is("test me", "test");
 
@@ -56,6 +55,29 @@ for (const plain of [
   "",
 ]) {
   assert.equal(detectMode(plain), null, `should be a plain message: "${plain}"`);
+}
+
+// Standalone quizzes: asking to be *given* one, as opposed to being tested now.
+const quiz = (text: string, topic: string, count: number) =>
+  assert.deepEqual(detectQuiz(text), { topic, count }, text);
+quiz("Make me a quiz about TCP", "TCP", 5);
+quiz("Create a 10 question quiz on subnetting", "subnetting", 10);
+quiz("create a 10-question quiz about the OSI model", "the OSI model", 10);
+quiz("Can you give me a quiz about networking?", "networking", 5);
+quiz("generate a practice exam on World War II", "World War II", 5);
+quiz("make a quiz", "", 5);
+quiz("Make me a quiz on my notes", "", 5);
+// Lengths the page cannot write round to the nearest one it can.
+quiz("create a 20 question quiz on TCP", "TCP", 10);
+quiz("make a 3 question quiz about DNS", "DNS", 5);
+quiz("make an 8-question quiz on DNS", "DNS", 10);
+
+// The two never claim the same sentence.
+assert.equal(detectQuiz("Test me on TCP"), null, "being tested now is not a standalone quiz");
+assert.equal(detectQuiz("Quiz me on TCP"), null);
+assert.equal(detectMode("Give me a quiz about photosynthesis"), null, "being given one is not Test mode");
+for (const plain of ["What is a quiz?", "I made a quiz yesterday", "quiz night ideas", ""]) {
+  assert.equal(detectQuiz(plain), null, `should be a plain message: "${plain}"`);
 }
 
 // The prompt asks for the exact format parseQuiz reads, so a model that

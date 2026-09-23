@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { Typography } from "heroui-native";
 import { useEffect, useState, type JSX } from "react";
 import { Pressable, ScrollView, View } from "react-native";
@@ -19,6 +20,80 @@ export type Question = {
   number: number;
   total: number;
 };
+
+/** A standalone quiz the tutor has set up, waiting to be opened. */
+export type QuizOffer = {
+  topic: string;
+  count: number;
+  /** "" nothing, "*" everything, else comma-separated note and pack ids. */
+  sources: string;
+  /** What it draws on, in words, for the card. */
+  basis: string;
+};
+
+/**
+ * The quiz, as a card in the conversation rather than a paragraph about one.
+ *
+ * It opens the Quiz page rather than writing the questions here: that page
+ * already writes them with a live count, lets you pick the question type and
+ * difficulty, and keeps the score — a second copy of all that in the chat
+ * would be two quizzes that slowly stop agreeing.
+ */
+export function QuizCard({ offer }: { offer: QuizOffer }): JSX.Element {
+  const palette = usePalette();
+  const router = useRouter();
+  const title = offer.topic ? `${offer.topic} quiz` : "Quiz on your notes";
+
+  return (
+    <View className="my-2.5 flex-row gap-2.5">
+      <Mascot pose="stretch" size={38} />
+      <View className="flex-1 gap-3 rounded-[18px] rounded-bl-md border border-border bg-surface px-3.5 py-3.5">
+        <View className="flex-row items-center gap-2.5">
+          <View
+            className="h-10 w-10 items-center justify-center rounded-xl"
+            style={{ backgroundColor: palette.accentSoft }}
+          >
+            <Ionicons name="document-text-outline" size={20} color={palette.accent} />
+          </View>
+          <View className="flex-1 gap-0.5">
+            <Typography.Paragraph className="font-ui-bold text-[15px]" numberOfLines={2}>
+              {title}
+            </Typography.Paragraph>
+            <Typography.Paragraph className="font-ui text-muted text-[12px]">
+              {offer.count} questions · {offer.basis}
+            </Typography.Paragraph>
+          </View>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Open the ${title}`}
+          onPress={() =>
+            router.push({
+              pathname: "/quiz/[id]",
+              // Not a note, so no note id; the page reads topic and sources.
+              params: {
+                id: "tutor",
+                topic: offer.topic,
+                sources: offer.sources,
+                count: String(offer.count),
+              },
+            })
+          }
+          className="min-h-[44px] flex-row items-center justify-center gap-2 rounded-full active:opacity-80"
+          style={{ backgroundColor: palette.accent }}
+        >
+          <Typography.Paragraph
+            className="font-ui-bold text-[13.5px]"
+            style={{ color: palette.accentForeground }}
+          >
+            Open quiz
+          </Typography.Paragraph>
+          <Ionicons name="arrow-forward" size={15} color={palette.accentForeground} />
+        </Pressable>
+      </View>
+    </View>
+  );
+}
 
 /** The chip's words for a scope. Short, because it shares a row with two others. */
 export function scopeLabel(scope: Scope): string {
