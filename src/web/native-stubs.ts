@@ -307,15 +307,40 @@ export class ExecuTorchLLM {
 const UNAVAILABLE =
   "This is the browser preview, so the model is not running. Open the app on a phone to actually ask it something.";
 
+const PREVIEW_TEST = [
+  "Q: This is the browser preview, so these are placeholder questions. Is the model running?",
+  "A) Yes",
+  "B) No — open the app on a phone for real questions",
+  "C) Only for tests",
+  "D) Only with notes",
+  "Correct: B",
+  "",
+  "Q: Where do real test questions come from?",
+  "A) A server",
+  "B) The model on your phone",
+  "C) The browser",
+  "D) A fixed list",
+  "Correct: B",
+].join("\n");
+
 export class RAG {
   load(): Promise<this> {
     return Promise.resolve(this);
   }
-  async generate({ callback }: { callback?: (token: string) => void } = {}): Promise<string> {
-    // Says so plainly rather than returning a plausible-looking answer, which
-    // is the one genuinely harmful thing a preview could do.
-    callback?.(UNAVAILABLE);
-    return UNAVAILABLE;
+  async generate({
+    input,
+    callback,
+  }: { input?: { content: string }[]; callback?: (token: string) => void } = {}): Promise<string> {
+    // A test request gets questions in the format the tutor parses, so the
+    // question card can be tried here — but every question says outright that
+    // it is a placeholder. Same rule as the sentence below: never a
+    // plausible-looking answer, which is the one genuinely harmful thing a
+    // preview could do.
+    const reply = /multiple-choice questions/.test(input?.[0]?.content ?? "")
+      ? PREVIEW_TEST
+      : UNAVAILABLE;
+    callback?.(reply);
+    return reply;
   }
   splitAddGenerate(): Promise<string> {
     return Promise.resolve(UNAVAILABLE);

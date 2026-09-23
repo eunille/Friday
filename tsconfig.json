@@ -19,6 +19,7 @@
     "src/lib/nutrition.check.ts",
     "src/lib/budget.check.ts",
     "src/lib/moneytalk.check.ts",
-    "src/lib/retrieval.check.ts"
+    "src/lib/retrieval.check.ts",
+    "src/lib/tutor.check.ts"
   ]
 }

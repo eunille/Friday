@@ -24,7 +24,7 @@ const SLOTS: readonly {
   raised?: true;
 }[] = [
   { name: "home", label: "Home", icon: "home" },
-  { name: "index", label: "Chat", icon: "chatbubble" },
+  { name: "index", label: "Tutor", icon: "school" },
   { name: "scan", label: "Scan", icon: "scan", raised: true },
   { name: "notes", label: "Notes", icon: "document-text" },
   { name: "library", label: "Tools", icon: "grid" },
