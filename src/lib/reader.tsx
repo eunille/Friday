@@ -26,16 +26,11 @@ export type Reader = {
   toggle: (key: string, text: string) => void;
   /** Render this somewhere: it is the one-time "this costs 335 MB" question. */
   dialog: JSX.Element;
-  /** Kokoro is loaded and can speak now. */
-  ready: boolean;
-  /** Kokoro was asked to load and could not. */
-  failed: string | null;
-  /** Load Kokoro without speaking — so talk mode is warm before its first reply. */
+  /** Load Kokoro without speaking — so voice replies are warm before the first one. */
   prepare: () => void;
   /**
-   * Hands-free: read this aloud and resolve when it has finished, or been
-   * stopped. Never asks about the download — talk mode asks once for both
-   * voices up front.
+   * Read this aloud and resolve when it has finished, or been stopped. Never
+   * asks about the download — the voice-replies switch asks once, up front.
    */
   say: (key: string, text: string) => Promise<void>;
   stop: () => void;
@@ -142,7 +137,10 @@ export function useReader(): Reader {
             queued += 1;
             if (!started) {
               started = true;
-              queue.start();
+              // Both arguments, explicitly: start()'s default offset is -1,
+              // which its own check then rejects ("offset must be a finite
+              // non-negative number") — react-native-audio-api 0.x.
+              queue.start(0, 0);
             }
           },
         });
@@ -272,8 +270,6 @@ export function useReader(): Reader {
     dismiss: () => setOwnNotice(null),
     toggle,
     dialog: confirm.dialog,
-    ready: tts.isReady,
-    failed,
     prepare: () => setArmed(true),
     say,
     stop,

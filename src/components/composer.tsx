@@ -54,9 +54,9 @@ export function Composer({
   /** A line under the field. */
   footnote?: ReactNode;
   /**
-   * The screen's own dictation, when it needs the mic for more than this field
-   * — the Tutor's talk mode. One Whisper per screen: two instances would each
-   * hold a 222 MB model.
+   * The screen's own dictation, when it wants to own the mic rather than leave
+   * it to this field. One Whisper per screen: two instances would each hold a
+   * 222 MB model.
    */
   dictation?: Dictation;
 }): JSX.Element {

@@ -304,7 +304,7 @@ function Turn({
 }
 
 function Chat(): JSX.Element {
-  const { rag, db, embed, tier, settings, invalidate, voiceReady, readerReady } = useAI();
+  const { rag, db, embed, tier, settings, invalidate, readerReady } = useAI();
   const router = useRouter();
   const palette = usePalette();
   const insets = useSafeAreaInsets();
@@ -319,6 +319,8 @@ function Chat(): JSX.Element {
   // reach for when the answer ought to come from your own material.
   const [scope, setScope] = useState<Scope>({ kind: "none" });
   const [sheet, setSheet] = useState<"mode" | "knowledge" | null>(null);
+  // Replies read aloud as they arrive — see toggleVoice.
+  const [voiceOn, setVoiceOn] = useState(false);
   // The questions still to come in a running test. Entries hold what has been
   // asked; this holds what has not, so answering never needs the model.
   const [test, setTest] = useState<{ items: QuizQuestion[]; index: number; right: number } | null>(
@@ -373,7 +375,7 @@ function Chat(): JSX.Element {
     [db, invalidate]
   );
 
-  // Every path through here returns what it answered, so talk mode can say it
+  // Every path through here returns what it answered, so voice replies can say it
   // aloud — or null when there is nothing worth saying.
   const ask = useCallback(
     async (
@@ -688,28 +690,20 @@ function Chat(): JSX.Element {
    * else goes to whichever mode the chip is on.
    */
   const send = useCallback(
-    async (raw: string, spoken = false): Promise<string | null> => {
+    async (raw: string): Promise<string | null> => {
       const text = raw.trim();
       if (!text || busy) return null;
 
       // A question is waiting: "B", "the second one", "reliable delivery" is
-      // an answer to it, typed or said — not a new topic, which is what Test
-      // mode would otherwise make of it.
+      // an answer to it, typed or dictated — not a new topic, which is what
+      // Test mode would otherwise make of it. Anything else falls through: a
+      // sentence during a test may be a new topic.
       const waiting = entries[entries.length - 1];
       if (test && waiting?.question && waiting.question.chosen === undefined) {
         const choice = spokenChoice(text, waiting.question.options);
         if (choice >= 0) {
           setDraft("");
           return answer(entries.length - 1, choice, text);
-        }
-        // Heard but not understood. Asked again rather than guessed, since a
-        // mishearing marked wrong is worse than a second ask. Typed, it falls
-        // through: a typed sentence during a test may be a new topic.
-        if (spoken) {
-          return `Sorry, which one? Say ${waiting.question.options
-            .map((_, index) => String.fromCharCode(65 + index))
-            .join(", ")
-            .replace(/, ([^,]*)$/, " or $1")}.`;
         }
       }
 
@@ -811,8 +805,9 @@ function Chat(): JSX.Element {
         ];
         setEntries(next);
         void persist(next);
-        // Typed, it starts reading now; spoken, talk mode says what comes back.
-        if (!spoken) reader.toggle(`${conversation}:${next.length - 1}`, content);
+        // Asked to be read, so it reads — through its own bubble when voice
+        // replies are off; when they are on, the caller says what comes back.
+        if (!voiceOn) reader.toggle(`${conversation}:${next.length - 1}`, content);
         return content;
       }
 
@@ -856,142 +851,48 @@ function Chat(): JSX.Element {
 
       return ask(text, history, as);
     },
-    [busy, entries, test, mode, scope, answer, startTest, ask, persist, db, reader, conversation]
+    [busy, entries, test, mode, scope, answer, startTest, ask, persist, db, reader, conversation, voiceOn]
   );
 
-  /* ---------------------------------------------------------- talk mode --- */
+  /* ------------------------------------------------------ voice replies --- */
 
-  // Hands-free: listen until you stop talking, answer, say the answer, listen
-  // again — the same send() as typing, so every mode, the matcher and spoken
-  // test answers work by voice with no second code path to drift.
-  const [talk, setTalk] = useState<"off" | "warming" | "listening" | "thinking" | "speaking">(
-    "off"
-  );
-  const [talkNotice, setTalkNotice] = useState<string | null>(null);
-  const talking = useRef(false);
-  // The loop outlives many renders, so it reads the latest of these through
-  // refs rather than the ones that existed when it started — above all send,
-  // whose idea of the conversation changes after every turn.
-  const sendRef = useRef(send);
-  const warm = useRef<{ mic: boolean; voice: boolean; failed: string | null }>({
-    mic: false,
-    voice: false,
-    failed: null,
-  });
-  useEffect(() => {
-    sendRef.current = send;
-    warm.current = {
-      mic: dictation.ready,
-      voice: reader.ready,
-      failed: dictation.failed ?? reader.failed,
-    };
-  }, [send, dictation.ready, reader.ready, dictation.failed, reader.failed]);
-
-  const endTalk = useCallback(
-    (why?: string) => {
-      talking.current = false;
-      setTalk("off");
-      setTalkNotice(why ?? null);
-      dictation.cancelListen();
-      reader.stop();
-      // Stopped mid-answer: stop writing it too, or it finishes to nobody.
-      if (busy) void rag?.interrupt();
+  // Voice on: every reply is still written out, and read aloud as well. The
+  // mic stays plain dictation, so there is one way in and one way out.
+  const speakReply = useCallback(
+    (reply: string | null) => {
+      if (reply && voiceOn) void reader.say(`voice:${conversation}`, reply);
     },
-    [dictation, reader, busy, rag]
+    [voiceOn, reader, conversation]
   );
-  // endTalk changes identity on every render — dictation and reader are fresh
-  // objects each time — so anything long-lived calls it through this. Two
-  // places would break without it: useFocusEffect re-runs its cleanup when
-  // its callback changes, which ended talk mode on the first re-render after
-  // it started; and the loop would call the endTalk from the turn it began,
-  // with that turn's out-of-date idea of whether an answer is being written.
-  const endTalkRef = useRef(endTalk);
-  useEffect(() => {
-    endTalkRef.current = endTalk;
-  }, [endTalk]);
 
-  const runTalk = useCallback(async () => {
-    talking.current = true;
-    setTalkNotice(null);
-    dictation.prepare();
-    reader.prepare();
-    setTalk("warming");
-    // Both voices loaded before the first turn: listening with no way to
-    // answer aloud, or answering with no way to hear the reply, is half a
-    // conversation.
-    while (talking.current && !(warm.current.mic && warm.current.voice)) {
-      // A model that failed to load will never be ready; waiting on it would
-      // leave "Getting the voices ready…" up forever.
-      if (warm.current.failed) {
-        endTalkRef.current(`Talk mode couldn't start: ${warm.current.failed}`);
-        return;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-
-    let turn = 0;
-    while (talking.current) {
-      setTalk("listening");
-      const heard = await dictation.listen();
-      if (!talking.current) return;
-      // Couldn't listen at all — mic denied, recorder failed. The composer
-      // already shows why; "I didn't hear anything" would be wrong.
-      if (heard === null) {
-        endTalkRef.current();
-        return;
-      }
-      if (!heard) {
-        // Silence twice would be a mic left open in a pocket. Once is enough
-        // to stop and say so.
-        endTalkRef.current("Talk mode stopped — I didn't hear anything.");
-        return;
-      }
-      setTalk("thinking");
-      const reply = await sendRef.current(heard, true);
-      if (!talking.current) return;
-      if (reply) {
-        setTalk("speaking");
-        await reader.say(`talk:${turn}`, reply);
-        turn += 1;
-      }
-    }
-  }, [dictation, reader]);
-
-  /**
-   * Asked once, for both voices together — talk mode needs both, and two
-   * download questions in a row for one button is one too many.
-   */
-  const toggleTalk = useCallback(() => {
-    if (talk !== "off") {
-      endTalk();
+  /** Asked once, the first time: the voice is a 335 MB download. */
+  const toggleVoice = useCallback(() => {
+    if (voiceOn) {
+      setVoiceOn(false);
+      reader.stop();
       return;
     }
-    const megabytes = (voiceReady ? 0 : 222) + (readerReady ? 0 : 335);
-    if (megabytes === 0) {
-      void runTalk();
+    const begin = (): void => {
+      setVoiceOn(true);
+      reader.prepare();
+    };
+    if (readerReady) {
+      begin();
       return;
     }
     confirm.ask({
-      title: "Download the voice models?",
-      message: `Talk mode listens with Whisper and answers aloud with Kokoro — ${megabytes} MB, downloaded once. After that it works with the radio off.`,
+      title: "Download the reading voice?",
+      message:
+        "Voice replies use Kokoro, an English voice that is 335 MB. It downloads once — after that it reads with the radio off.",
       action: "Download",
-      onConfirm: () => void runTalk(),
+      onConfirm: begin,
     });
-  }, [talk, endTalk, voiceReady, readerReady, runTalk, confirm]);
+  }, [voiceOn, reader, readerReady, confirm]);
 
-  // A tab stays mounted when you leave it, so without this the mic would stay
-  // open — or a reply keep reading aloud — behind whatever screen you went to.
-  // Through the ref — see endTalkRef. reader.stop is stable.
+  // A tab stays mounted when you leave it, so without this a reply would keep
+  // reading aloud behind whatever screen you went to. reader.stop is stable.
   const stopReading = reader.stop;
-  useFocusEffect(
-    useCallback(
-      () => () => {
-        if (talking.current) endTalkRef.current();
-        else stopReading();
-      },
-      [stopReading]
-    )
-  );
+  useFocusEffect(useCallback(() => () => stopReading(), [stopReading]));
 
   /** Drops the last answer and asks the same question again. */
   const regenerate = useCallback(
@@ -1088,7 +989,7 @@ function Chat(): JSX.Element {
               text={item.content}
               question={item.question}
               active={index === activeQuestion}
-              onAnswer={(choice) => answer(index, choice)}
+              onAnswer={(choice) => speakReply(answer(index, choice))}
             />
           ) : item.role === "assistant" && item.content === "" ? (
             <View className="my-2.5 flex-row gap-2.5">
@@ -1144,70 +1045,6 @@ function Chat(): JSX.Element {
         }
       />
 
-      {/* What talk mode is doing, and the way out. Worded as instructions,
-          because the one thing a hands-free screen must never leave unclear
-          is whether it is listening. */}
-      {talk !== "off" && (
-        <View
-          accessibilityLiveRegion="polite"
-          className="mx-4 mb-2 flex-row items-center gap-2.5 rounded-2xl border px-3.5 py-2.5"
-          style={{
-            borderColor: talk === "listening" ? palette.warning : palette.border,
-            backgroundColor: talk === "listening" ? palette.warningSoft : palette.surface,
-          }}
-        >
-          <Ionicons
-            name={
-              talk === "listening"
-                ? "mic"
-                : talk === "speaking"
-                  ? "volume-high"
-                  : talk === "thinking"
-                    ? "ellipsis-horizontal"
-                    : "download-outline"
-            }
-            size={17}
-            color={talk === "listening" ? palette.warning : palette.muted}
-          />
-          <Typography.Paragraph className="flex-1 font-ui-medium text-[12.5px]" numberOfLines={2}>
-            {talk === "warming"
-              ? dictation.downloadProgress > 0 && dictation.downloadProgress < 1
-                ? `Getting the listening model · ${Math.round(dictation.downloadProgress * 100)}%`
-                : reader.downloadProgress > 0 && reader.downloadProgress < 1
-                  ? `Getting the voice · ${Math.round(reader.downloadProgress * 100)}%`
-                  : "Getting the voices ready…"
-              : talk === "listening"
-                ? "Listening — just talk. It answers when you stop."
-                : talk === "thinking"
-                  ? "Thinking…"
-                  : "Speaking — it will listen again when it's done."}
-          </Typography.Paragraph>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Stop talk mode"
-            onPress={() => endTalk()}
-            className="min-h-[34px] justify-center rounded-full border border-border bg-background px-3 active:opacity-70"
-          >
-            <Typography.Paragraph className="font-ui-bold text-[12px]">Stop</Typography.Paragraph>
-          </Pressable>
-        </View>
-      )}
-
-      {talk === "off" && talkNotice && (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`${talkNotice}. Dismiss.`}
-          onPress={() => setTalkNotice(null)}
-          className="mx-4 mb-2 flex-row items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2"
-        >
-          <Ionicons name="mic-off-outline" size={15} color={palette.muted} />
-          <Typography.Paragraph className="flex-1 font-ui text-[12px] text-muted" numberOfLines={2}>
-            {talkNotice}
-          </Typography.Paragraph>
-          <Ionicons name="close" size={15} color={palette.muted} />
-        </Pressable>
-      )}
-
       {reader.notice && (
         <Pressable
           accessibilityRole="button"
@@ -1226,12 +1063,9 @@ function Chat(): JSX.Element {
       <Composer
         value={draft}
         onChange={setDraft}
-        onSend={() => void send(draft)}
+        onSend={() => void send(draft).then(speakReply)}
         placeholder={PLACEHOLDERS[mode]}
         dictation={dictation}
-        // One conversation at a time: typing into a turn talk mode is in the
-        // middle of would race it for the same model.
-        editable={talk === "off"}
         busy={busy}
         onStop={() => void rag?.interrupt()}
         overlap={overlap}
@@ -1252,26 +1086,25 @@ function Chat(): JSX.Element {
               onPress={() => setSheet("knowledge")}
             />
             <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ selected: talk !== "off" }}
-              accessibilityLabel={
-                talk === "off" ? "Talk. Speak to the tutor and hear it answer." : "Stop talk mode"
-              }
-              onPress={toggleTalk}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: voiceOn }}
+              accessibilityLabel="Voice replies. Read every answer aloud as well as writing it."
+              onPress={toggleVoice}
               className={`min-h-[34px] flex-row items-center gap-1.5 rounded-full border px-2.5 ${
-                talk === "off" ? "border-border" : "border-warning bg-warning-soft"
+                voiceOn ? "border-accent bg-accent-soft" : "border-border"
               }`}
             >
               <Ionicons
-                name={talk === "off" ? "headset-outline" : "headset"}
+                name={voiceOn ? "volume-high" : "volume-mute-outline"}
                 size={14}
-                color={talk === "off" ? palette.muted : palette.warning}
+                color={voiceOn ? palette.accent : palette.muted}
               />
               <Typography.Paragraph
-                className="font-ui-medium text-[11px]"
-                style={{ color: talk === "off" ? palette.muted : palette.warning }}
+                className={`font-ui-medium text-[11px] ${voiceOn ? "text-accent" : "text-muted"}`}
               >
-                Talk
+                {voiceOn && reader.downloadProgress > 0 && reader.downloadProgress < 1
+                  ? `Voice ${Math.round(reader.downloadProgress * 100)}%`
+                  : "Voice"}
               </Typography.Paragraph>
             </Pressable>
             <Pressable

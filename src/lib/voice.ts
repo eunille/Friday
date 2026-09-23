@@ -1,73 +1,8 @@
 /**
- * The decisions hands-free talking needs, kept free of audio and React so they
- * can be checked: when someone has finished speaking, which option a spoken
- * answer meant, and how a test question sounds read aloud.
+ * Spoken test answers and questions, kept free of audio and React so they can
+ * be checked: which option an answer like "the second one" meant, and how a
+ * test question sounds read aloud.
  */
-
-/**
- * Calibration knobs, and the first place to look when talk mode misbehaves on
- * a particular phone — microphones differ by an order of magnitude in how hot
- * they run. Cuts people off: raise SILENCE_MS. Never stops in a noisy room:
- * raise SPEECH_RMS.
- */
-export const VOICE = {
-  /** Level (RMS, 0–1) above which a buffer counts as speech. */
-  SPEECH_RMS: 0.015,
-  /** Quiet after speech that means "done talking". A thinking pause is shorter. */
-  SILENCE_MS: 1200,
-  /** Give up if nothing is said at all for this long. */
-  NO_SPEECH_MS: 8000,
-  /** Hard cap on one turn, so a TV in the background cannot hold the mic open. */
-  MAX_MS: 30_000,
-} as const;
-
-export type Listening = {
-  /** Whether any speech has been heard yet this turn. */
-  heard: boolean;
-  /** How long it has been quiet since the last speech. */
-  quietMs: number;
-  /** How long this turn has been listening. */
-  totalMs: number;
-};
-
-export const LISTENING: Listening = { heard: false, quietMs: 0, totalMs: 0 };
-
-/** Why a turn ended: they finished, they never started, or it ran too long. */
-export type Stop = "spoke" | "nothing" | "too-long";
-
-/**
- * One buffer's worth of listening: the next state, and whether to stop.
- *
- * Silence only ends a turn after speech. Quiet before anyone has spoken is
- * someone about to speak, and cutting that off is the classic way voice
- * assistants feel rude.
- */
-export function listen(
-  state: Listening,
-  rms: number,
-  ms: number,
-  knobs: typeof VOICE = VOICE
-): { next: Listening; stop: Stop | null } {
-  const speaking = rms >= knobs.SPEECH_RMS;
-  const next: Listening = {
-    heard: state.heard || speaking,
-    quietMs: speaking ? 0 : state.quietMs + ms,
-    totalMs: state.totalMs + ms,
-  };
-
-  if (next.totalMs >= knobs.MAX_MS) return { next, stop: next.heard ? "too-long" : "nothing" };
-  if (next.heard && next.quietMs >= knobs.SILENCE_MS) return { next, stop: "spoke" };
-  if (!next.heard && next.totalMs >= knobs.NO_SPEECH_MS) return { next, stop: "nothing" };
-  return { next, stop: null };
-}
-
-/** Root-mean-square level of a buffer: 0 for silence, around 0.1 for talking. */
-export function rmsOf(samples: Float32Array): number {
-  if (samples.length === 0) return 0;
-  let sum = 0;
-  for (let i = 0; i < samples.length; i += 1) sum += samples[i]! * samples[i]!;
-  return Math.sqrt(sum / samples.length);
-}
 
 /** Letters, ordinals and numbers, including Whisper's spellings of a lone letter said aloud. */
 const PICKS: Record<string, number> = {
