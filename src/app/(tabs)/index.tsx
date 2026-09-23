@@ -502,7 +502,18 @@ function Chat(): JSX.Element {
                   .filter((note) => scope.kind === "subject" && note.subject === scope.id)
                   .map((note) => note.id);
           const bodies = await Promise.all(ids.map((id) => readSource(db, id)));
-          context = clampForPrompt(bodies.join("\n\n"));
+          context = clampForPrompt(bodies.join("\n\n").trim());
+          // Every note in it deleted since it was picked: nothing to test on,
+          // and "Topic: " would only get questions about nothing.
+          if (!context) {
+            const reply =
+              "There's nothing in those notes to test you on anymore. Pick other notes, or name a topic.";
+            const next: Entry[] = [...asked, { role: "assistant", content: reply }];
+            setEntries(next);
+            setStreaming(null);
+            await persist(next);
+            return reply;
+          }
         } else if (scope.kind !== "none" && db && embed) {
           const chunks = await retrieve({ db, embed, query: topic, scope, limit: 6 });
           context = asContext(chunks, 3000);
@@ -854,6 +865,12 @@ function Chat(): JSX.Element {
       setTalk("listening");
       const heard = await dictation.listen();
       if (!talking.current) return;
+      // Couldn't listen at all — mic denied, recorder failed. The composer
+      // already shows why; "I didn't hear anything" would be wrong.
+      if (heard === null) {
+        endTalkRef.current();
+        return;
+      }
       if (!heard) {
         // Silence twice would be a mic left open in a pocket. Once is enough
         // to stop and say so.

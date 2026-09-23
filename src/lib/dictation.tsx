@@ -1,3 +1,4 @@
+import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import { AudioManager, AudioRecorder } from "react-native-audio-api";
 import { models, useSpeechToText } from "react-native-executorch";
@@ -38,10 +39,11 @@ export type Dictation = {
   listening: boolean;
   /**
    * Hands-free: record until the person has finished speaking, then hand back
-   * what they said — "" if they said nothing, or the turn was cancelled.
+   * what they said — "" if they said nothing, or the turn was cancelled; null
+   * if it could not listen at all, with the reason in `notice`.
    * Does not call onText; the caller decides what the words are for.
    */
-  listen: () => Promise<string>;
+  listen: () => Promise<string | null>;
   /** End a listen() now, with nothing heard. */
   cancelListen: () => void;
 };
@@ -89,21 +91,21 @@ export function useDictation(onText: (text: string) => void): Dictation {
   // a promise it did not create.
   const settle = useRef<(() => void) | null>(null);
 
-  const listen = useCallback(async (): Promise<string> => {
+  const listen = useCallback(async (): Promise<string | null> => {
     setNotice(null);
     setArmed(true);
     if ((await AudioManager.requestRecordingPermissions()) !== "Granted") {
       setNotice("Microphone access is off. Turn it on in Settings to talk.");
-      return "";
+      return null;
     }
 
     const active = new AudioRecorder();
     const heard: Float32Array[] = [];
     let state = LISTENING;
 
-    return new Promise<string>((resolve) => {
+    return new Promise<string | null>((resolve) => {
       let done = false;
-      const end = async (why: Stop | "cancelled"): Promise<void> => {
+      const end = async (why: Stop | "cancelled" | "failed"): Promise<void> => {
         if (done) return;
         done = true;
         settle.current = null;
@@ -113,6 +115,10 @@ export function useDictation(onText: (text: string) => void): Dictation {
         setListening(false);
         // Nothing said, or cancelled: no transcription, which on silence would
         // only produce Whisper's habit of hallucinating "Thank you."
+        if (why === "failed") {
+          resolve(null);
+          return;
+        }
         if (why === "nothing" || why === "cancelled") {
           resolve("");
           return;
@@ -122,7 +128,7 @@ export function useDictation(onText: (text: string) => void): Dictation {
           resolve(text.trim());
         } catch (error) {
           setNotice(error instanceof Error ? error.message : String(error));
-          resolve("");
+          resolve(null);
         }
       };
       settle.current = () => void end("cancelled");
@@ -152,7 +158,7 @@ export function useDictation(onText: (text: string) => void): Dictation {
         }
         if (started.status === "error") {
           setNotice(started.message);
-          void end("cancelled");
+          void end("failed");
           return;
         }
         recorder.current = active;
@@ -246,6 +252,26 @@ export function useDictation(onText: (text: string) => void): Dictation {
       onConfirm: () => void start(),
     });
   }, [recording, start, stop, voiceReady, confirm]);
+
+  // A tab stays mounted when you leave it, so the unmount cleanup above never
+  // runs and the mic would keep recording behind the next screen. Stopped —
+  // not discarded — so what was said still lands in the draft. Through a ref:
+  // stop changes with the model, and a changing callback here would re-run
+  // the cleanup, and so stop recording, on every re-render.
+  const stopRef = useRef(stop);
+  useEffect(() => {
+    stopRef.current = stop;
+  }, [stop]);
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        // Only a tap-to-dictate recording. A listen() in flight is talk
+        // mode's, and the Tutor ends that itself through cancelListen.
+        if (recorder.current && !settle.current) void stopRef.current();
+      },
+      []
+    )
+  );
 
   // Written the moment the files land rather than after a transcript, so
   // cancelling a recording does not lose the fact that the download happened
