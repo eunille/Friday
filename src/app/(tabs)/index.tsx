@@ -793,11 +793,19 @@ function Chat(): JSX.Element {
   // refs rather than the ones that existed when it started — above all send,
   // whose idea of the conversation changes after every turn.
   const sendRef = useRef(send);
-  const warm = useRef({ mic: false, voice: false });
+  const warm = useRef<{ mic: boolean; voice: boolean; failed: string | null }>({
+    mic: false,
+    voice: false,
+    failed: null,
+  });
   useEffect(() => {
     sendRef.current = send;
-    warm.current = { mic: dictation.ready, voice: reader.ready };
-  }, [send, dictation.ready, reader.ready]);
+    warm.current = {
+      mic: dictation.ready,
+      voice: reader.ready,
+      failed: dictation.failed ?? reader.failed,
+    };
+  }, [send, dictation.ready, reader.ready, dictation.failed, reader.failed]);
 
   const endTalk = useCallback(
     (why?: string) => {
@@ -832,6 +840,12 @@ function Chat(): JSX.Element {
     // answer aloud, or answering with no way to hear the reply, is half a
     // conversation.
     while (talking.current && !(warm.current.mic && warm.current.voice)) {
+      // A model that failed to load will never be ready; waiting on it would
+      // leave "Getting the voices ready…" up forever.
+      if (warm.current.failed) {
+        endTalkRef.current(`Talk mode couldn't start: ${warm.current.failed}`);
+        return;
+      }
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
 
@@ -880,14 +894,16 @@ function Chat(): JSX.Element {
   }, [talk, endTalk, voiceReady, readerReady, runTalk, confirm]);
 
   // A tab stays mounted when you leave it, so without this the mic would stay
-  // open behind whatever screen you went to. Through the ref, with no
-  // dependencies — see endTalkRef.
+  // open — or a reply keep reading aloud — behind whatever screen you went to.
+  // Through the ref — see endTalkRef. reader.stop is stable.
+  const stopReading = reader.stop;
   useFocusEffect(
     useCallback(
       () => () => {
         if (talking.current) endTalkRef.current();
+        else stopReading();
       },
-      []
+      [stopReading]
     )
   );
 

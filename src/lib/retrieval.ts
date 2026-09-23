@@ -229,7 +229,9 @@ const FTS_SETUP = `
     INSERT INTO chunk_fts(chunk_fts, rowid, document) VALUES('delete', old.rowid, old.document);
   END;
 
-  CREATE TRIGGER IF NOT EXISTS chunk_fts_update AFTER UPDATE ON vectors BEGIN
+  -- OF document: filing a note under a subject rewrites only metadata, and
+  -- re-indexing every chunk of it for that would be work for nothing.
+  CREATE TRIGGER IF NOT EXISTS chunk_fts_update AFTER UPDATE OF document ON vectors BEGIN
     INSERT INTO chunk_fts(chunk_fts, rowid, document) VALUES('delete', old.rowid, old.document);
     INSERT INTO chunk_fts(rowid, document) VALUES (new.rowid, new.document);
   END;

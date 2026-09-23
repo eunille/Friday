@@ -28,6 +28,8 @@ export type Reader = {
   dialog: JSX.Element;
   /** Kokoro is loaded and can speak now. */
   ready: boolean;
+  /** Kokoro was asked to load and could not. */
+  failed: string | null;
   /** Load Kokoro without speaking — so talk mode is warm before its first reply. */
   prepare: () => void;
   /**
@@ -147,7 +149,10 @@ export function useReader(): Reader {
         written = true;
         if (queued <= 0) finish();
       } catch (error) {
-        setOwnNotice(error instanceof Error ? error.message : String(error));
+        // A stream cut short by stop() may reject; that is not a failure to report.
+        if (playback.current?.queue === queue) {
+          setOwnNotice(error instanceof Error ? error.message : String(error));
+        }
         finish();
         release();
       }
@@ -156,6 +161,10 @@ export function useReader(): Reader {
   );
 
   const stop = useCallback(() => {
+    // A reply still waiting for the voice to load is cancelled too, or it
+    // speaks out of nowhere once loading finishes.
+    pending.current = null;
+    setPreparingKey(null);
     ttsRef.current.streamStop(true);
     halt();
     setSpeaking(null);
@@ -195,8 +204,6 @@ export function useReader(): Reader {
   const toggle = useCallback(
     (key: string, text: string) => {
       if (speaking === key || preparingKey === key) {
-        pending.current = null;
-        setPreparingKey(null);
         stop();
         return;
       }
@@ -230,6 +237,12 @@ export function useReader(): Reader {
       new Promise<void>((resolve) => {
         // A say() already waiting is ended, not orphaned.
         release();
+        // A voice that already failed to load will never speak, and the
+        // effect that lets waiters go has already run.
+        if (ttsRef.current.error) {
+          resolve();
+          return;
+        }
         settle.current = resolve;
         if (ttsRef.current.isReady) {
           void play(key, text);
@@ -260,6 +273,7 @@ export function useReader(): Reader {
     toggle,
     dialog: confirm.dialog,
     ready: tts.isReady,
+    failed,
     prepare: () => setArmed(true),
     say,
     stop,

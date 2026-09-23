@@ -30,6 +30,8 @@ export type Dictation = {
   dialog: JSX.Element;
   /** Whisper is loaded and can transcribe now. */
   ready: boolean;
+  /** Whisper was asked to load and could not — it never will this session. */
+  failed: string | null;
   /** Load Whisper without recording — so talk mode is warm before its first turn. */
   prepare: () => void;
   /** True while listen() has the mic open. */
@@ -141,6 +143,13 @@ export function useDictation(onText: (text: string) => void): Dictation {
       );
 
       void active.start().then((started) => {
+        // Cancelled while the mic was still opening: end() already ran, so
+        // close it here or it stays open with nobody listening.
+        if (done) {
+          void active.stop();
+          active.clearOnAudioReady();
+          return;
+        }
         if (started.status === "error") {
           setNotice(started.message);
           void end("cancelled");
@@ -245,11 +254,15 @@ export function useDictation(onText: (text: string) => void): Dictation {
     if (stt.downloadProgress >= 1 && !voiceReady) markVoiceReady();
   }, [stt.downloadProgress, voiceReady, markVoiceReady]);
 
+  const failed = armed && stt.error ? stt.error.message : null;
+
   return {
     recording,
     working: stt.isGenerating,
     downloadProgress: stt.downloadProgress,
-    notice,
+    // A failed load is shown too, not left as a mic that silently never works.
+    notice: notice ?? failed,
+    failed,
     dismiss: () => setNotice(null),
     toggle,
     dialog: confirm.dialog,
