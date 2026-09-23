@@ -28,6 +28,7 @@ import {
   useAI,
 } from "../../lib/ai";
 import { trimToSentence } from "../../lib/formats";
+import { asContext, retrieve } from "../../lib/retrieval";
 import { Composer } from "../../components/composer";
 import { useKeyboardOverlap, usePalette } from "../../lib/theme";
 
@@ -183,7 +184,7 @@ function Turn({
 }
 
 function Chat(): JSX.Element {
-  const { rag, db, tier, settings, invalidate } = useAI();
+  const { rag, db, embed, tier, settings, invalidate } = useAI();
   const router = useRouter();
   const palette = usePalette();
   const insets = useSafeAreaInsets();
@@ -225,9 +226,6 @@ function Chat(): JSX.Element {
       setDraft("");
       setStreaming("");
 
-      // Retrieval happens inside generate() and the docs are never returned,
-      // but promptGenerator is handed them — so a closure captures the sources
-      // without paying for a second query.
       let cites: Cite[] = [];
       let answer = "";
       let tokens = 0;
@@ -235,27 +233,30 @@ function Chat(): JSX.Element {
       const started = Date.now();
 
       try {
+        // The system message is prepended per call rather than baked into the
+        // model, so changing a setting takes effect on the next question
+        // instead of forcing a reload.
+        const input: Message[] = [
+          { role: "system", content: systemPrompt(settings) },
+          ...asMessages(asked),
+        ];
+
+        // Retrieved here rather than inside generate(). The library's own
+        // retrieval reads every embedding in the database into JavaScript on
+        // every question and searches by meaning alone; this one stays bounded
+        // in SQLite and adds a keyword pass for the exact terms — "RFC 1918",
+        // an IP, a formula — that embeddings blur. See lib/retrieval.ts.
+        if (useNotes && db && embed) {
+          const chunks = await retrieve({ db, embed, query: question });
+          cites = [...new Map(chunks.map((c) => [c.sourceId, { id: c.sourceId, title: c.title }])).values()];
+          // Same `Message: … Context: …` shape the library appended, so the
+          // model sees the format it always has and only the chunks change.
+          input.push({ role: "user", content: `Message: ${question}\nContext: ${asContext(chunks)}` });
+        }
+
         await rag.generate({
-          // The system message is prepended per call rather than baked into the
-          // model, so changing a setting takes effect on the next question
-          // instead of forcing a reload.
-          input: [{ role: "system", content: systemPrompt(settings) }, ...asMessages(asked)],
-          augmentedGeneration: useNotes,
-          promptGenerator: (messages, docs) => {
-            const seen = new Set<string>();
-            cites = docs.flatMap((doc) => {
-              const id = doc.metadata?.sourceId as string | undefined;
-              const title = doc.metadata?.title as string | undefined;
-              if (!id || seen.has(id)) return [];
-              seen.add(id);
-              return [{ id, title: title || "Untitled" }];
-            });
-            // The same shape the library's own default builds.
-            const last = messages[messages.length - 1];
-            return `Message: ${last?.content ?? ""}\nContext: ${docs
-              .map((doc) => doc.document)
-              .join("\n")}`;
-          },
+          input,
+          augmentedGeneration: false,
           callback: (token) => {
             answer += token;
             tokens += 1;
@@ -305,7 +306,7 @@ function Chat(): JSX.Element {
         setStreaming(null);
       }
     },
-    [rag, db, busy, useNotes, settings, invalidate]
+    [rag, db, embed, busy, useNotes, settings, invalidate]
   );
 
   /** Drops the last answer and asks the same question again. */

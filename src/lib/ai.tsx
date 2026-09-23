@@ -257,6 +257,16 @@ type AIContextValue = {
   rag: RAG | null;
   store: OPSQLiteVectorStore | null;
   db: DB | null;
+  /**
+   * Turns text into a vector, for retrieval that is not a generation.
+   *
+   * The store keeps its embeddings private and `rag.generate()` retrieves
+   * without ever handing the chunks back, so there was no way to search and
+   * then *look at* what was found — which is what citing a source, scoping to
+   * a subject, and showing the notes behind an answer all need.
+   * See `lib/retrieval.ts`.
+   */
+  embed: ((text: string) => Promise<number[]>) | null;
   status: AIStatus;
   tier: Tier | null;
   setTier: (tier: Tier) => void;
@@ -293,6 +303,9 @@ function errorMessage(error: unknown): string {
 
 export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
   const [store, setStore] = useState<OPSQLiteVectorStore | null>(null);
+  // Held separately because the store takes ownership of the instance and does
+  // not expose it, and retrieval needs to embed a query without generating.
+  const [embedder, setEmbedder] = useState<ExecuTorchEmbeddings | null>(null);
   const [tier, setTierState] = useState<Tier | null>(null);
   const [settings, setSettingsState] = useState<AISettings>(DEFAULT_SETTINGS);
   const [appearance, setAppearanceState] = useState<Appearance>("system");
@@ -404,6 +417,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
         void db.execute(REMEMBER_FETCHED, [`${FETCHED}embeddings`]);
 
         const savedTier = byKey.get("tier");
+        setEmbedder(embeddings);
         setStore(vectorStore);
         setSettingsState(readSettings(byKey.get("ai")));
         setAlertsState(byKey.get("alerts") === "1");
@@ -606,6 +620,9 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
       rag,
       store,
       db: store?.db ?? null,
+      // Bound rather than passed raw, so callers get a function and not a model
+      // they could unload out from under the store.
+      embed: embedder ? (text: string) => embedder.embed(text) : null,
       status,
       tier,
       setTier,
@@ -625,6 +642,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
   }, [
     rag,
     store,
+    embedder,
     tier,
     error,
     download,

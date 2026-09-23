@@ -172,6 +172,14 @@ function run(sql: string, args: unknown[] = []): { rows: Row[] } {
     return { rows: [] };
   }
   if (!name) return { rows: [] };
+
+  // The keyword index is an FTS5 virtual table, and its `'rebuild'` is a
+  // command, not a row. Treated as an ordinary table, the rebuild planted an
+  // empty `{ id: "" }` that the keyword search then returned with no text —
+  // a row real SQLite cannot produce, and one that crashed chat-with-notes in
+  // the preview only. An empty index is a state the app genuinely handles:
+  // the vector half carries the search on its own.
+  if (name === "chunk_fts") return { rows: [] };
   const rows = table(name);
 
   if (/^SELECT/i.test(text)) {
@@ -279,6 +287,12 @@ export class ExecuTorchEmbeddings {
   unload(): Promise<void> {
     return Promise.resolve();
   }
+  // Retrieval embeds the query itself now rather than leaving it to the
+  // store. The preview's SELECT ignores the distance anyway, so any vector
+  // will do — it only has to exist.
+  embed(): Promise<number[]> {
+    return Promise.resolve([0]);
+  }
 }
 
 export class ExecuTorchLLM {
@@ -308,8 +322,9 @@ export class RAG {
   }
   /**
    * Chunks on blank lines and writes a row each, with no embedding — enough
-   * for the Library to show a pack as installed and count its passages.
-   * Retrieval still answers empty, because there is no model to embed with.
+   * for the Library to show a pack as installed and count its passages, and
+   * for retrieval to find them. The preview's SELECT ignores the distance, so
+   * what comes back is unranked, not wrong.
    */
   splitAddDocument({
     document,
@@ -322,7 +337,11 @@ export class RAG {
     const metadata = metadataGenerator?.(chunks) ?? chunks.map(() => ({}));
     const ids = chunks.map((chunk, index) => {
       const id = uuidv4();
-      void run("INSERT INTO vectors (id, content, metadata) VALUES (?, ?, ?)", [
+      // `document`, as the real table names it — OPSQLiteVectorStore creates
+      // `vectors(id, document, embedding, metadata)`. This was `content`, so
+      // every reader of the column (readSource, retrieval) got undefined back
+      // in the preview and nowhere else.
+      void run("INSERT INTO vectors (id, document, metadata) VALUES (?, ?, ?)", [
         id,
         chunk,
         JSON.stringify(metadata[index] ?? {}),
