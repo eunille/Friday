@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import {
   clampForPrompt,
   concatFloat32,
+  forSpeech,
   joinChunks,
   parseFlashcards,
   parsePack,
@@ -220,5 +221,25 @@ assert.equal(trimToSentence("- one\n- two\n- thr"), "- one\n- two");
 assert.equal(trimToSentence("no punctuation here"), "no punctuation here");
 assert.equal(trimToSentence(""), "");
 assert.equal(trimToSentence("   "), "");
+
+/* ------------------------------------------------------------ forSpeech --- */
+
+// Marks go, words stay.
+assert.equal(forSpeech("This is **really** important."), "This is really important.");
+assert.equal(forSpeech("Use `ping` to test."), "Use ping to test.");
+assert.equal(forSpeech("See [the RFC](https://example.com/rfc1918)."), "See the RFC.");
+// Headings and bullets become sentences, with one pause per line — not a
+// "hash" and not a run of stops.
+assert.equal(
+  forSpeech("## Steps\n- Open the app\n- Tap Scan"),
+  "Steps. Open the app. Tap Scan"
+);
+assert.equal(forSpeech("First line.\n\n\nSecond line."), "First line. Second line.");
+assert.equal(forSpeech("Here is why:\nit is faster."), "Here is why: it is faster.");
+// A code block keeps its contents; only the fences are dropped.
+assert.equal(forSpeech("```js\nconst x = 1\n```"), "const x = 1");
+// Numbers and ordinary punctuation are left alone.
+assert.equal(forSpeech("It costs ₱2,300.50 — about 3.5%."), "It costs ₱2,300.50 — about 3.5%.");
+assert.equal(forSpeech("   "), "");
 
 console.log("formats: all checks passed");

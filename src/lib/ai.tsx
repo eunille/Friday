@@ -252,6 +252,15 @@ export const EXTRAS = [
     when: "The first time you dictate.",
   },
   {
+    // Measured, all files: synthesizer 260 MB, duration predictor 60, the
+    // English phonemizer 15, one voice 0.5.
+    key: "reader",
+    name: "Kokoro (English voice)",
+    size: "335 MB",
+    note: "Reads answers aloud.",
+    when: "The first time you tap Read aloud.",
+  },
+  {
     key: "ocr",
     name: "CRAFT + CRNN (English)",
     size: "37 MB",
@@ -325,6 +334,10 @@ type AIContextValue = {
   cancelDownload: () => void;
   /** Whether the voice model is already on the phone. */
   voiceReady: boolean;
+  /** Whether the reading voice (Kokoro) is already on the phone. */
+  readerReady: boolean;
+  /** Record that it is, once its download has actually finished. */
+  markReaderReady: () => void;
   /** Record that it is, once a download has actually finished. */
   markVoiceReady: () => void;
 };
@@ -393,10 +406,17 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
    * same question — is this already on the phone — and the answer decides
    * whether tapping the mic is free or costs 222 MB.
    */
-  const markVoiceReady = useCallback(() => {
-    setFetched((prev) => (prev.has("speech") ? prev : new Set(prev).add("speech")));
-    void store?.db.execute(REMEMBER_FETCHED, [`${FETCHED}speech`]);
-  }, [store]);
+  const markFetched = useCallback(
+    (key: string) => {
+      setFetched((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+      void store?.db.execute(REMEMBER_FETCHED, [`${FETCHED}${key}`]);
+    },
+    [store]
+  );
+  const markVoiceReady = useCallback(() => markFetched("speech"), [markFetched]);
+  // The reading voice, likewise: it decides whether Read aloud is free or
+  // costs 335 MB.
+  const markReaderReady = useCallback(() => markFetched("reader"), [markFetched]);
 
   // Boot: embedding model + vector store + saved preferences. Runs once.
   useEffect(() => {
@@ -735,6 +755,8 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
       cancelDownload,
       voiceReady: fetched.has("speech"),
       markVoiceReady,
+      readerReady: fetched.has("reader"),
+      markReaderReady,
     };
   }, [
     rag,
@@ -757,6 +779,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
     cancelDownload,
     fetched,
     markVoiceReady,
+    markReaderReady,
   ]);
 
   return <AIContext.Provider value={value}>{children}</AIContext.Provider>;

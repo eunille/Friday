@@ -225,7 +225,9 @@ function Library(): JSX.Element {
                 name={
                   extra.key === "speech"
                     ? "mic-outline"
-                    : extra.key === "ocr"
+                    : extra.key === "reader"
+                      ? "volume-high-outline"
+                      : extra.key === "ocr"
                       ? "scan-outline"
                       : "search-outline"
                 }

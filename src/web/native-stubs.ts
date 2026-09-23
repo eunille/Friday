@@ -406,6 +406,7 @@ export const models = {
     gemma4_e2b: source,
   },
   speech_to_text: { whisper_tiny_en: source },
+  text_to_speech: { kokoro: { en_us: { heart: source } } },
 };
 
 /** scan.tsx takes this straight off the package, not out of `models`. */
@@ -451,6 +452,58 @@ export function useSpeechToText(): {
   downloadProgress: number;
 } {
   return { transcribe: () => Promise.resolve(""), isReady: false, downloadProgress: 0 };
+}
+
+/**
+ * No voice in a browser. Ready, with nothing to say: Read aloud can be pressed
+ * in the preview and simply finishes — silence rather than a fake voice.
+ */
+export function useTextToSpeech(): {
+  isReady: boolean;
+  isGenerating: boolean;
+  error: null;
+  downloadProgress: number;
+  forward: () => Promise<Float32Array>;
+  stream: () => Promise<void>;
+  streamInsert: () => void;
+  streamStop: () => void;
+} {
+  return {
+    isReady: true,
+    isGenerating: false,
+    error: null,
+    downloadProgress: 1,
+    forward: () => Promise.resolve(new Float32Array()),
+    stream: () => Promise.resolve(),
+    streamInsert: () => undefined,
+    streamStop: () => undefined,
+  };
+}
+
+/** Just enough of react-native-audio-api's playback side for the reader to run. */
+export class AudioContext {
+  destination = {};
+  createBufferQueueSource(): {
+    connect: () => void;
+    start: () => void;
+    stop: () => void;
+    enqueueBuffer: () => string;
+    onBufferEnded: null | (() => void);
+  } {
+    return {
+      connect: () => undefined,
+      start: () => undefined,
+      stop: () => undefined,
+      enqueueBuffer: () => "",
+      onBufferEnded: null,
+    };
+  }
+  createBuffer(): { copyToChannel: () => void } {
+    return { copyToChannel: () => undefined };
+  }
+  close(): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 /* -------------------------------------------------- expo-notifications --- */

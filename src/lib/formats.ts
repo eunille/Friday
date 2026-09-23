@@ -354,3 +354,33 @@ export function trimToSentence(text: string): string {
   }
   return trimmed;
 }
+
+/**
+ * An answer, as it should be said rather than seen.
+ *
+ * A reading voice pronounces what it is given, so markdown the screen hides —
+ * "asterisk asterisk important", "hash hash Step two" — comes out as noise.
+ * Only the marks are removed, never the words: a bullet becomes the start of a
+ * sentence, a link keeps its label, and a code span keeps its contents.
+ */
+export function forSpeech(text: string): string {
+  return (
+    text
+      // Fenced code: the fences go, the contents are still worth hearing.
+      .replace(/```[a-z]*\n?/gi, "")
+      // [label](url) — the label is what a person would read out.
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+      // Headings, quotes and bullets at the start of a line.
+      .replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*•+]\s+)/gm, "")
+      // Emphasis and inline code marks, anywhere.
+      .replace(/[*_`~]+/g, "")
+      // Trimmed first, so a newline at either end is not read as a pause.
+      .trim()
+      // A line break is a pause, not a word — and one pause, not ten.
+      .replace(/\s*\n+\s*/g, ". ")
+      // …except after a line that already ended its own sentence.
+      .replace(/([.!?:])\s*\.\s/g, "$1 ")
+      .replace(/\s{2,}/g, " ")
+      .trim()
+  );
+}

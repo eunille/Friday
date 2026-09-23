@@ -38,6 +38,7 @@ import {
   useAI,
 } from "../../lib/ai";
 import { clampForPrompt, parseQuiz, trimToSentence, type QuizQuestion } from "../../lib/formats";
+import { useReader } from "../../lib/reader";
 import { asContext, retrieve, type Chunk, type Scope } from "../../lib/retrieval";
 import {
   MODES,
@@ -186,11 +187,19 @@ function Turn({
   onSave,
   onRegenerate,
   saved,
+  reading,
+  progress,
+  onRead,
 }: {
   entry: Entry;
   onSave: () => void;
   onRegenerate: () => void;
   saved: boolean;
+  /** Whether this reply is being read aloud, or waiting for the voice to load. */
+  reading: "idle" | "preparing" | "speaking";
+  /** The voice's download, 0 to 1, shown while this reply waits for it. */
+  progress: number;
+  onRead: () => void;
 }): JSX.Element {
   const palette = usePalette();
   const router = useRouter();
@@ -256,6 +265,25 @@ function Turn({
             tone="muted"
             onPress={onRegenerate}
           />
+          <IconButton
+            name={reading === "idle" ? "volume-high-outline" : "stop-circle-outline"}
+            label={
+              reading === "speaking"
+                ? "Stop reading"
+                : reading === "preparing"
+                  ? "Cancel reading"
+                  : "Read aloud"
+            }
+            tone={reading === "idle" ? "muted" : "accent"}
+            onPress={onRead}
+          />
+          {reading === "preparing" && (
+            <Typography.Paragraph className="font-ui text-[10px] text-muted">
+              {progress > 0 && progress < 1
+                ? `Voice ${Math.round(progress * 100)}%`
+                : "Getting the voice ready…"}
+            </Typography.Paragraph>
+          )}
           <View className="flex-1" />
           {entry.ms !== undefined && entry.tokens !== undefined && entry.ms > 0 && (
             <Typography.Paragraph className="font-ui text-[10px] text-muted-soft">
@@ -290,6 +318,12 @@ function Chat(): JSX.Element {
     null
   );
   const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
+  // One voice for the whole conversation — see useReader for why not one per
+  // reply. Keys carry a conversation number, so starting a new chat cannot
+  // hand message 3 of the new one the "speaking" state of message 3 of the old.
+  const reader = useReader();
+  const [conversation, setConversation] = useState(0);
+  const readKey = (index: number): string => `${conversation}:${index}`;
   const listRef = useRef<FlatList<Entry>>(null);
   // One id per conversation, so every answer upserts the same row instead of
   // leaving a trail of one-turn chats on the dashboard.
@@ -307,6 +341,7 @@ function Chat(): JSX.Element {
       setEntries(body as Entry[]);
       setSavedIds(new Set());
       setTest(null);
+      setConversation((count) => count + 1);
     });
   }, [db, resume]);
 
@@ -751,6 +786,7 @@ function Chat(): JSX.Element {
             setEntries([]);
             setSavedIds(new Set());
             setTest(null);
+            setConversation((count) => count + 1);
             chatId.current = newChatId();
           }}
         />
@@ -784,6 +820,15 @@ function Chat(): JSX.Element {
               saved={savedIds.has(index)}
               onSave={() => void saveAnswer(index)}
               onRegenerate={() => regenerate(index)}
+              reading={
+                reader.speaking === readKey(index)
+                  ? "speaking"
+                  : reader.preparing === readKey(index)
+                    ? "preparing"
+                    : "idle"
+              }
+              progress={reader.downloadProgress}
+              onRead={() => reader.toggle(readKey(index), item.content)}
             />
           )
         }
@@ -817,6 +862,21 @@ function Chat(): JSX.Element {
           </View>
         }
       />
+
+      {reader.notice && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${reader.notice}. Dismiss.`}
+          onPress={reader.dismiss}
+          className="mx-4 mb-2 flex-row items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2"
+        >
+          <Ionicons name="volume-mute-outline" size={15} color={palette.muted} />
+          <Typography.Paragraph className="flex-1 font-ui text-[12px] text-muted" numberOfLines={2}>
+            {reader.notice}
+          </Typography.Paragraph>
+          <Ionicons name="close" size={15} color={palette.muted} />
+        </Pressable>
+      )}
 
       <Composer
         value={draft}
@@ -863,6 +923,7 @@ function Chat(): JSX.Element {
       {sheet === "knowledge" && (
         <KnowledgeSheet scope={scope} onPick={setScope} onClose={() => setSheet(null)} />
       )}
+      {reader.dialog}
     </View>
   );
 }
