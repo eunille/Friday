@@ -9,6 +9,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type JSX,
   type ReactNode,
@@ -21,6 +22,7 @@ import { RAG, uuidv4 } from "react-native-rag";
 import { MascotCooking, MascotFocused, useCookingWord } from "../components/cooking";
 import { joinChunks } from "./formats";
 import { createLedgerTables } from "./ledger";
+import { recover } from "./recovery";
 import { usePalette } from "./theme";
 
 // ExecuTorch 0.9+ ships no downloader of its own — an adapter must be
@@ -34,6 +36,19 @@ const DB_NAME = "offline-ai";
 const FETCHED = "fetched:";
 const REMEMBER_FETCHED =
   "INSERT INTO settings (key, value) VALUES (?, '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value";
+
+/**
+ * Written just before a model loads into memory, deleted once it has. Still
+ * there at the next start means the load never finished — and nothing ends a
+ * process mid-load except the system reclaiming memory. Without this, a model
+ * too big for the phone is loaded again on every launch: a crash loop that
+ * locks someone out of their own notes, with reinstalling the only way out.
+ */
+const LOADING = "loading";
+/** The model that was last killed mid-load, so Tools can say so. */
+const CRASHED = "crashed";
+const PUT =
+  "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value";
 
 export const TIERS = {
   tiny: {
@@ -50,12 +65,35 @@ export const TIERS = {
     note: "Noticeably better answers.",
     model: models.llm.qwen2_5_1_5b,
   },
+  // New entries get new keys rather than taking over an old one. "Downloaded"
+  // is remembered per key (`fetched:<key>`), so pointing `lite` at a different
+  // model would tell everyone who had the old one that the new one is already
+  // on disk — and skip straight to a load with nothing to load.
+  //
+  // ponytail: Qwen3.5 is in the registry and deliberately not here. Its 0.8B
+  // is a 1.35 GB download (more than Qwen2.5 1.5B) and its 2B is 2.9 GB (more
+  // than Gemma), measured from the files — it costs more than it buys at
+  // every size this list offers.
+  liquid: {
+    label: "Lite+",
+    name: "LFM2.5 1.2B",
+    size: "1.1 GB",
+    note: "A newer design, the same download as Qwen2.5 1.5B.",
+    model: models.llm.lfm2_5_1_2b_instruct,
+  },
   standard: {
     label: "Standard",
     name: "Qwen2.5 3B",
     size: "1.9 GB",
     note: "Wants about 3 GB of free memory.",
     model: models.llm.qwen2_5_3b,
+  },
+  gemma: {
+    label: "Best",
+    name: "Gemma 4 E2B",
+    size: "2.5 GB",
+    note: "Google's newest small model. Wants about 4 GB of free memory.",
+    model: models.llm.gemma4_e2b,
   },
 } as const;
 
@@ -270,6 +308,8 @@ type AIContextValue = {
   status: AIStatus;
   tier: Tier | null;
   setTier: (tier: Tier) => void;
+  /** A model that got the app closed while loading, last time it was tried. */
+  crashed: Tier | null;
   settings: AISettings;
   setSettings: (settings: AISettings) => void;
   appearance: Appearance;
@@ -307,6 +347,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
   // not expose it, and retrieval needs to embed a query without generating.
   const [embedder, setEmbedder] = useState<ExecuTorchEmbeddings | null>(null);
   const [tier, setTierState] = useState<Tier | null>(null);
+  const [crashed, setCrashed] = useState<Tier | null>(null);
   const [settings, setSettingsState] = useState<AISettings>(DEFAULT_SETTINGS);
   const [appearance, setAppearanceState] = useState<Appearance>("system");
   const [revision, setRevision] = useState(0);
@@ -326,6 +367,15 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
   // ExpoResourceFetcher.listDownloadedFiles() answers exactly — at the cost of
   // matching its local paths back to each tier's source URLs by basename.
   const [fetched, setFetched] = useState<ReadonlySet<string>>(() => new Set());
+  // Read by the load effect without being one of its dependencies: the flags
+  // change as downloads finish, and a finished download must not restart the
+  // load it just finished.
+  const fetchedRef = useRef(fetched);
+  const crashedRef = useRef(crashed);
+  useEffect(() => {
+    fetchedRef.current = fetched;
+    crashedRef.current = crashed;
+  }, [fetched, crashed]);
   // Off until asked for. Notification permission is requested when this is
   // turned on, never at startup.
   const [alerts, setAlertsState] = useState(false);
@@ -425,9 +475,23 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
         if (typeof savedAppearance === "string" && savedAppearance in APPEARANCES) {
           setAppearanceState(savedAppearance as Appearance);
         }
-        setTierState(
-          typeof savedTier === "string" && savedTier in TIERS ? (savedTier as Tier) : DEFAULT_TIER
-        );
+        // If the last load into memory never finished, start smaller rather
+        // than try the same thing again. See lib/recovery.ts and its check.
+        const interrupted = byKey.get(LOADING);
+        const next = recover({
+          known: Object.keys(TIERS) as Tier[],
+          fallback: DEFAULT_TIER,
+          saved: savedTier,
+          interrupted,
+          lastCrash: byKey.get(CRASHED),
+        });
+        if (interrupted !== undefined) {
+          void db.execute("DELETE FROM settings WHERE key = ?", [LOADING]);
+          if (next.crashed) void db.execute(PUT, [CRASHED, next.crashed]);
+        }
+        if (next.fellBack) void db.execute(PUT, ["tier", next.start]);
+        setCrashed(next.crashed);
+        setTierState(next.start);
       } catch (err) {
         if (!cancelled) setError(errorMessage(err));
       }
@@ -445,16 +509,41 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
     let cancelled = false;
     void attempt;
 
+    // Marked only once the file is whole. Closing the app during a download
+    // is an ordinary thing to do and must not read as the model being too
+    // big; only the load into memory can be that.
+    let marked = false;
+    const mark = (): void => {
+      if (marked) return;
+      marked = true;
+      void store.db.execute(PUT, [LOADING, tier]);
+    };
+    const unmark = (): void => {
+      void store.db.execute("DELETE FROM settings WHERE key = ?", [LOADING]);
+    };
+
     const llm = new ExecuTorchLLM({
       ...TIERS[tier].model(),
       onDownloadProgress: (progress) => {
         if (!cancelled) setDownload({ of: tier, progress });
+        if (progress >= 1) mark();
       },
     });
+
+    // Already on disk, so this load is only into memory.
+    if (fetchedRef.current.has(tier)) mark();
 
     llm
       .load()
       .then(() => {
+        unmark();
+        // It fits after all — a later attempt succeeded — so stop warning.
+        // Only for this model: the smaller one we fell back to loading fine
+        // says nothing about the one that did not.
+        if (crashedRef.current === tier) {
+          setCrashed(null);
+          void store.db.execute("DELETE FROM settings WHERE key = ?", [CRASHED]);
+        }
         if (cancelled) {
           void llm.unload();
           return;
@@ -469,6 +558,9 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
         void store.db.execute(REMEMBER_FETCHED, [`${FETCHED}${tier}`]);
       })
       .catch((err: unknown) => {
+        // A failure we got to see — a dropped download, a bad file — is not
+        // the silent kill the mark exists for, and already has its own screen.
+        unmark();
         if (!cancelled) setError(errorMessage(err));
       });
 
@@ -478,6 +570,10 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
     };
   }, [store, tier, attempt]);
 
+  // The warning stays up until the model loads, not until it is tapped: picking
+  // it again is a choice to retry, and if it is killed again the next start
+  // says so again. Clearing it on tap would hide the one fact that explains a
+  // second crash.
   const setTier = useCallback(
     (next: Tier) => {
       setTierState(next);
@@ -626,6 +722,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
       status,
       tier,
       setTier,
+      crashed,
       settings,
       setSettings,
       appearance,
@@ -644,6 +741,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
     store,
     embedder,
     tier,
+    crashed,
     error,
     download,
     setTier,

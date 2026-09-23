@@ -318,11 +318,11 @@ export default function Home(): JSX.Element {
           {/* ponytail: two rows of two, not a grid library. */}
           <View className="flex-row gap-2.5">
             <Tile
-              icon="chatbubble-outline"
+              icon="school-outline"
               tint={palette.accent}
               wash={palette.accentSoft}
-              title="Chat with AI"
-              note="Grounded in your notes"
+              title="Tutor"
+              note="Ask, learn, or get tested"
               onPress={() => router.push("/")}
             />
             <Tile

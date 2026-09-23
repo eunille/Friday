@@ -39,7 +39,7 @@ function Section({ title, children }: { title: string; children: ReactNode }): J
 }
 
 function Library(): JSX.Element {
-  const { rag, db, tier, setTier, settings, revision, invalidate } = useAI();
+  const { rag, db, tier, setTier, crashed, settings, revision, invalidate } = useAI();
   const router = useRouter();
   const confirm = useConfirm();
   const palette = usePalette();
@@ -188,7 +188,15 @@ function Library(): JSX.Element {
               key={key}
               first={index === 0}
               label={TIERS[key].name}
-              note={TIERS[key].note}
+              // Said on the row itself, because this is where someone goes to
+              // find out why the app quietly switched back to Tiny.
+              note={
+                crashed === key
+                  ? `The app closed while loading this — the phone may not have the memory.${
+                      key === "tiny" ? "" : " Switched back to Tiny."
+                    }`
+                  : TIERS[key].note
+              }
               trailing={TIERS[key].size}
               selected={tier === key}
               onPress={() => setTier(key)}

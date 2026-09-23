@@ -394,7 +394,16 @@ const source = (): Record<string, string> => ({});
  */
 export const models = {
   text_embedding: { all_minilm_l6_v2: source },
-  llm: { qwen2_5_0_5b: source, qwen2_5_1_5b: source, qwen2_5_3b: source },
+  // One entry per TIERS model. A missing one is not a type error here — this
+  // file is untyped against the real registry — it is `undefined()` the first
+  // time someone picks that model in the preview.
+  llm: {
+    qwen2_5_0_5b: source,
+    qwen2_5_1_5b: source,
+    qwen2_5_3b: source,
+    lfm2_5_1_2b_instruct: source,
+    gemma4_e2b: source,
+  },
   speech_to_text: { whisper_tiny_en: source },
 };
 

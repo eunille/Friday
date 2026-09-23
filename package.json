@@ -16,7 +16,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "check": "node --experimental-strip-types src/lib/formats.check.ts && node --experimental-strip-types src/lib/nutrition.check.ts && node --experimental-strip-types src/lib/budget.check.ts && node --experimental-strip-types src/lib/moneytalk.check.ts && node --experimental-strip-types src/lib/retrieval.check.ts && node --experimental-strip-types src/lib/tutor.check.ts"
+    "check": "node --experimental-strip-types src/lib/formats.check.ts && node --experimental-strip-types src/lib/nutrition.check.ts && node --experimental-strip-types src/lib/budget.check.ts && node --experimental-strip-types src/lib/moneytalk.check.ts && node --experimental-strip-types src/lib/retrieval.check.ts && node --experimental-strip-types src/lib/tutor.check.ts && node --experimental-strip-types src/lib/recovery.check.ts"
   },
   "dependencies": {
     "@expo-google-fonts/archivo": "^0.4.2",
