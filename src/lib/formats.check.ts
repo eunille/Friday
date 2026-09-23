@@ -8,9 +8,11 @@
 import assert from "node:assert/strict";
 
 import {
+  canonicalSubject,
   clampForPrompt,
   concatFloat32,
   forSpeech,
+  subjectsOf,
   joinChunks,
   parseFlashcards,
   parsePack,
@@ -241,5 +243,31 @@ assert.equal(forSpeech("```js\nconst x = 1\n```"), "const x = 1");
 // Numbers and ordinary punctuation are left alone.
 assert.equal(forSpeech("It costs ₱2,300.50 — about 3.5%."), "It costs ₱2,300.50 — about 3.5%.");
 assert.equal(forSpeech("   "), "");
+
+/* ------------------------------------------------------------- subjects --- */
+
+// An existing spelling wins over a new variant of it — the filter is exact.
+assert.equal(canonicalSubject("networking", ["Networking", "History"]), "Networking");
+assert.equal(canonicalSubject("  world   HISTORY ", ["World History"]), "World History");
+assert.equal(canonicalSubject("Biology", ["Networking"]), "Biology");
+assert.equal(canonicalSubject("  two   spaces ", []), "two spaces");
+assert.equal(canonicalSubject("   ", ["Networking"]), null, "blank means no subject");
+assert.equal(canonicalSubject("x".repeat(60), [])?.length, 40, "capped for the chip");
+
+assert.deepEqual(
+  subjectsOf([
+    { subject: "networking" },
+    { subject: "History" },
+    { subject: "networking" },
+    { subject: null },
+    {},
+  ]),
+  [
+    { name: "History", count: 1 },
+    { name: "networking", count: 2 },
+  ],
+  "counted, unfiled notes skipped, A to Z ignoring case"
+);
+assert.deepEqual(subjectsOf([]), []);
 
 console.log("formats: all checks passed");

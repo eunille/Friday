@@ -356,6 +356,34 @@ export function trimToSentence(text: string): string {
 }
 
 /**
+ * The subject a typed name means: an existing one if it matches ignoring case
+ * and spacing, otherwise the typed name tidied — or null for nothing at all.
+ *
+ * The retrieval filter is an exact match on the stored name, so "networking"
+ * beside "Networking" would be two subjects that each find half the notes.
+ * Reusing the spelling already in use is what keeps them one.
+ */
+export function canonicalSubject(typed: string, existing: readonly string[]): string | null {
+  const tidy = typed.replace(/\s+/g, " ").trim().slice(0, 40);
+  if (!tidy) return null;
+  const key = tidy.toLowerCase();
+  return existing.find((name) => name.replace(/\s+/g, " ").trim().toLowerCase() === key) ?? tidy;
+}
+
+/** Every subject in use, with how many notes are filed under it, A to Z. */
+export function subjectsOf(
+  notes: readonly { subject?: string | null }[]
+): { name: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const note of notes) {
+    if (note.subject) counts.set(note.subject, (counts.get(note.subject) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+}
+
+/**
  * An answer, as it should be said rather than seen.
  *
  * A reading voice pronounces what it is given, so markdown the screen hides —

@@ -5,6 +5,7 @@ import { useEffect, useState, type JSX } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 
 import { listNotes, listSources, useAI } from "../lib/ai";
+import { subjectsOf } from "../lib/formats";
 import type { Scope } from "../lib/retrieval";
 import { MODES, verdict, type Mode } from "../lib/tutor";
 import { usePalette } from "../lib/theme";
@@ -101,7 +102,7 @@ export function scopeLabel(scope: Scope): string {
   if (scope.kind === "sources") {
     return scope.ids.length === 1 ? "1 selected" : `${scope.ids.length} selected`;
   }
-  if (scope.kind === "subject") return "Subject";
+  if (scope.kind === "subject") return scope.id;
   return "Notes off";
 }
 
@@ -203,10 +204,12 @@ export function KnowledgeSheet({
 }): JSX.Element {
   const { db } = useAI();
   const [items, setItems] = useState<{ id: string; title: string; kind: "note" | "pack" }[]>([]);
+  const [subjects, setSubjects] = useState<{ name: string; count: number }[]>([]);
 
   useEffect(() => {
     if (!db) return;
-    void Promise.all([listNotes(db), listSources(db, "pack")]).then(([notes, packs]) =>
+    void Promise.all([listNotes(db), listSources(db, "pack")]).then(([notes, packs]) => {
+      setSubjects(subjectsOf(notes));
       setItems([
         ...notes.map((note) => ({
           id: note.id,
@@ -214,8 +217,8 @@ export function KnowledgeSheet({
           kind: "note" as const,
         })),
         ...packs.map((pack) => ({ id: pack.id, title: pack.title, kind: "pack" as const })),
-      ])
-    );
+      ]);
+    });
   }, [db]);
 
   const chosen = scope.kind === "sources" ? scope.ids : [];
@@ -243,6 +246,29 @@ export function KnowledgeSheet({
             onPress={() => onPick({ kind: "all" })}
           />
         </Group>
+
+        {/* A subject is the natural unit to study by — "everything on
+            networking" — and it keeps working as notes are added to it,
+            where a ticked list is frozen at the moment it was ticked. */}
+        {subjects.length > 0 && (
+          <View className="gap-1.5">
+            <Typography.Paragraph className="px-1 font-ui-medium text-muted text-[12px]">
+              A subject
+            </Typography.Paragraph>
+            <Group>
+              {subjects.map((subject, index) => (
+                <ChoiceRow
+                  key={subject.name}
+                  first={index === 0}
+                  label={subject.name}
+                  trailing={subject.count === 1 ? "1 note" : `${subject.count} notes`}
+                  selected={scope.kind === "subject" && scope.id === subject.name}
+                  onPress={() => onPick({ kind: "subject", id: subject.name })}
+                />
+              ))}
+            </Group>
+          </View>
+        )}
 
         {items.length > 0 && (
           <View className="gap-1.5">

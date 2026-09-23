@@ -240,6 +240,22 @@ function run(sql: string, args: unknown[] = []): { rows: Row[] } {
     return { rows: [] };
   }
 
+  // Relabelling chunks in place (a note's subject). Bound as (value, sourceId)
+  // for json_set and (sourceId) for json_remove — never an id first, so the
+  // generic upsert below would plant a junk row named after the subject.
+  if (/^UPDATE vectors SET metadata = json_(set|remove)/i.test(text)) {
+    const removing = /json_remove/i.test(text);
+    const sourceId = String(removing ? args[0] : args[1]);
+    for (const row of rows) {
+      const meta = readMetadata(row) as Record<string, unknown>;
+      if (meta.sourceId !== sourceId) continue;
+      if (removing) delete meta.subjectId;
+      else meta.subjectId = args[0];
+      row.metadata = JSON.stringify(meta);
+    }
+    return { rows: [] };
+  }
+
   // INSERT and UPDATE both arrive as upserts, and the id is always bound first.
   if (/^(INSERT|UPDATE|REPLACE)/i.test(text)) {
     const id = String(args[0] ?? "");

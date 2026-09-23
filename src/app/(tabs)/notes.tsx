@@ -52,6 +52,16 @@ function Notes(): JSX.Element {
                     {note.title || "Untitled"}
                   </Typography.Paragraph>
                   <View className="flex-row items-center gap-2">
+                    {note.subject && (
+                      <View className="max-w-[45%] rounded-full bg-accent-soft px-2 py-0.5">
+                        <Typography.Paragraph
+                          className="font-ui-medium text-accent text-[11px]"
+                          numberOfLines={1}
+                        >
+                          {note.subject}
+                        </Typography.Paragraph>
+                      </View>
+                    )}
                     <Typography.Paragraph className="font-ui text-muted text-[12px]">
                       {relativeDate(note.updatedAt)}
                     </Typography.Paragraph>

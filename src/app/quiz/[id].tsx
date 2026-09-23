@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import { Pressable, View } from "react-native";
 
 import { ChoiceRow, Group, PageHeader, PageScroll, SectionTitle } from "../../components/screen";
-import { ModelGate, getNote, readSource, saveQuizResult, useAI } from "../../lib/ai";
+import { ModelGate, getNote, listNotes, readSource, saveQuizResult, useAI } from "../../lib/ai";
 import { clampForPrompt, parseFlashcards, parseQuiz } from "../../lib/formats";
 import { asContext, retrieve, type Scope } from "../../lib/retrieval";
 import { usePalette } from "../../lib/theme";
@@ -196,18 +196,29 @@ function Quiz({
       return;
     }
 
-    const ids = sources && sources !== "*" ? sources.split(",") : [];
-    const scope: Scope =
-      sources === "*" ? { kind: "all" } : ids.length > 0 ? { kind: "sources", ids } : { kind: "none" };
+    // "@Networking" is a subject; "*" everything; otherwise note and pack ids.
+    const subject = sources?.startsWith("@") ? sources.slice(1) : null;
+    const ids = sources && sources !== "*" && !subject ? sources.split(",") : [];
+    const scope: Scope = subject
+      ? { kind: "subject", id: subject }
+      : sources === "*"
+        ? { kind: "all" }
+        : ids.length > 0
+          ? { kind: "sources", ids }
+          : { kind: "none" };
 
     void (async () => {
       if (ids.length === 1) {
         const note = await getNote(db, ids[0]);
         if (note) setRecordAs(note.id);
       }
-      if (!topic && ids.length > 0) {
-        // "Quiz me on my notes": the notes themselves, whole.
-        const bodies = await Promise.all(ids.map((source) => readSource(db, source)));
+      // "Quiz me on my notes": the notes themselves, whole — the chosen ones,
+      // or every note filed under the chosen subject.
+      const whole = subject
+        ? (await listNotes(db)).filter((note) => note.subject === subject).map((note) => note.id)
+        : ids;
+      if (!topic && whole.length > 0) {
+        const bodies = await Promise.all(whole.map((source) => readSource(db, source)));
         setBody(bodies.join("\n\n"));
       } else if (topic && scope.kind !== "none" && embed) {
         // A topic within your notes: only the passages about it, so a quiz on

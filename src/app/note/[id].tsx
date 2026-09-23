@@ -6,10 +6,110 @@ import { Pressable, ScrollView, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useConfirm } from "../../components/dialog";
-import { IconButton, PageHeader } from "../../components/screen";
-import { ModelGate, deleteNote, getNote, reindexNote, saveNoteText, useAI } from "../../lib/ai";
+import { Drawer, SheetHead } from "../../components/money";
+import { ChoiceRow, Group, IconButton, PageHeader } from "../../components/screen";
+import {
+  ModelGate,
+  deleteNote,
+  getNote,
+  listNotes,
+  reindexNote,
+  saveNoteText,
+  setNoteSubject,
+  useAI,
+} from "../../lib/ai";
 import { useDictation } from "../../lib/dictation";
+import { canonicalSubject, subjectsOf } from "../../lib/formats";
 import { useKeyboardOverlap, usePalette } from "../../lib/theme";
+
+/**
+ * Where a note is filed: an existing subject, none, or a new one typed in.
+ *
+ * Existing subjects come first and are one tap, because the likeliest subject
+ * for a new note is one already in use — and every one picked rather than
+ * retyped is one fewer "Networking" / "networking" split.
+ */
+function SubjectSheet({
+  current,
+  onPick,
+  onClose,
+}: {
+  current: string | null;
+  onPick: (subject: string | null) => void;
+  onClose: () => void;
+}): JSX.Element {
+  const { db } = useAI();
+  const palette = usePalette();
+  const [subjects, setSubjects] = useState<{ name: string; count: number }[]>([]);
+  const [typed, setTyped] = useState("");
+
+  useEffect(() => {
+    if (db) void listNotes(db).then((notes) => setSubjects(subjectsOf(notes)));
+  }, [db]);
+
+  const pick = (subject: string | null): void => {
+    onPick(subject);
+    onClose();
+  };
+  const fresh = canonicalSubject(
+    typed,
+    subjects.map((subject) => subject.name)
+  );
+
+  return (
+    <Drawer onClose={onClose}>
+      <SheetHead title="Subject" onClose={onClose} />
+      <ScrollView
+        contentContainerClassName="gap-3 px-4 pt-2 pb-2"
+        keyboardShouldPersistTaps="handled"
+      >
+        <Group>
+          <ChoiceRow
+            first
+            label="No subject"
+            selected={current === null}
+            onPress={() => pick(null)}
+          />
+          {subjects.map((subject) => (
+            <ChoiceRow
+              key={subject.name}
+              label={subject.name}
+              trailing={subject.count === 1 ? "1 note" : `${subject.count} notes`}
+              selected={current === subject.name}
+              onPress={() => pick(subject.name)}
+            />
+          ))}
+        </Group>
+        <View className="flex-row items-center gap-2">
+          <TextInput
+            value={typed}
+            onChangeText={setTyped}
+            placeholder="New subject, e.g. Networking"
+            placeholderTextColor={palette.placeholder}
+            returnKeyType="done"
+            onSubmitEditing={() => fresh && pick(fresh)}
+            className="min-h-[46px] flex-1 rounded-xl border border-border bg-background px-3.5 font-ui text-[15px] text-foreground"
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Use this subject"
+            disabled={!fresh}
+            onPress={() => fresh && pick(fresh)}
+            className="min-h-[46px] items-center justify-center rounded-xl px-4 active:opacity-80"
+            style={{ backgroundColor: palette.accent, opacity: fresh ? 1 : 0.4 }}
+          >
+            <Typography.Paragraph
+              className="font-ui-bold text-[14px]"
+              style={{ color: palette.accentForeground }}
+            >
+              Use
+            </Typography.Paragraph>
+          </Pressable>
+        </View>
+      </ScrollView>
+    </Drawer>
+  );
+}
 
 /** Long enough that a pause between words doesn't write, short enough to never lose work. */
 const AUTOSAVE_DELAY = 800;
@@ -83,6 +183,8 @@ function Editor({ id }: { id: string }): JSX.Element {
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [subject, setSubject] = useState<string | null>(null);
+  const [picking, setPicking] = useState(false);
 
   // Shared with the chat composer — see src/lib/dictation.ts.
   const dictation = useDictation(
@@ -103,8 +205,22 @@ function Editor({ id }: { id: string }): JSX.Element {
       if (!note) return;
       setTitle(note.title);
       setBody(note.body);
+      setSubject(note.subject ?? null);
     });
   }, [db, id]);
+
+  /** Filed the moment it is picked — it is one field, not an edit to wait on. */
+  const fileUnder = useCallback(
+    (next: string | null) => {
+      setSubject(next);
+      if (!db) return;
+      void setNoteSubject(db, { id, title, body, subject: next }).then(() => {
+        setSaved(true);
+        invalidate();
+      });
+    },
+    [db, id, title, body, invalidate]
+  );
 
   useEffect(() => {
     latest.current = { title, body, dirty };
@@ -225,6 +341,28 @@ function Editor({ id }: { id: string }): JSX.Element {
           }}
           multiline
         />
+        {/* Only once there is something to file. An empty note is not kept,
+            and filing one would keep it. */}
+        {(!empty || subject) && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={subject ? `Subject: ${subject}. Change it.` : "Add a subject"}
+            onPress={() => setPicking(true)}
+            className="mx-5 mb-2 flex-row items-center gap-1.5 self-start rounded-full border border-border px-2.5 py-1 active:opacity-70"
+          >
+            <Ionicons
+              name={subject ? "folder" : "folder-outline"}
+              size={13}
+              color={subject ? palette.accent : palette.muted}
+            />
+            <Typography.Paragraph
+              className={`font-ui-medium text-[12px] ${subject ? "text-accent" : "text-muted"}`}
+              numberOfLines={1}
+            >
+              {subject ?? "Add a subject"}
+            </Typography.Paragraph>
+          </Pressable>
+        )}
         <TextInput
           className="min-h-[300px] px-5 pb-6 font-read text-[18px] leading-[28px] text-foreground"
           placeholder={dictation.recording ? "Listening…" : "Start writing."}
@@ -287,6 +425,9 @@ function Editor({ id }: { id: string }): JSX.Element {
       </View>
       {confirm.dialog}
       {dictation.dialog}
+      {picking && (
+        <SubjectSheet current={subject} onPick={fileUnder} onClose={() => setPicking(false)} />
+      )}
     </View>
   );
 }

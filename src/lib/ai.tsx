@@ -124,6 +124,8 @@ export type Note = {
   body: string;
   createdAt: string;
   updatedAt: string;
+  /** What it is filed under, as typed. Null for notes that are not filed. */
+  subject?: string | null;
 };
 
 /**
@@ -448,6 +450,14 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
              updatedAt TEXT NOT NULL
            )`
         );
+        // Added after notes existed, so every older database gets it here.
+        // SQLite has no ADD COLUMN IF NOT EXISTS; the error on every later
+        // start is the answer to "is it there yet", not a fault.
+        try {
+          await db.execute("ALTER TABLE notes ADD COLUMN subject TEXT");
+        } catch {
+          /* already there */
+        }
         await db.execute(
           `CREATE TABLE IF NOT EXISTS chats (
              id        TEXT PRIMARY KEY,
@@ -1068,6 +1078,37 @@ export async function saveNoteText(
 }
 
 /**
+ * Files a note under a subject, or under none.
+ *
+ * Saves the text alongside, because it can be called on a note the autosave
+ * has not reached yet — the row must exist for the subject to land on it.
+ *
+ * The chunks are relabelled in place rather than re-embedded: a subject says
+ * where a note belongs, not what it says, so the vectors are still right and
+ * rebuilding them would be seconds of work for nothing.
+ */
+export async function setNoteSubject(
+  db: DB,
+  note: { id: string; title: string; body: string; subject: string | null }
+): Promise<void> {
+  const now = new Date().toISOString();
+  await db.execute(
+    `INSERT INTO notes (id, title, body, createdAt, updatedAt, subject) VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET title = excluded.title,
+                                   body = excluded.body,
+                                   updatedAt = excluded.updatedAt,
+                                   subject = excluded.subject`,
+    [note.id, note.title, note.body, now, now, note.subject]
+  );
+  await db.execute(
+    note.subject
+      ? "UPDATE vectors SET metadata = json_set(metadata, '$.subjectId', ?) WHERE json_extract(metadata, '$.sourceId') = ?"
+      : "UPDATE vectors SET metadata = json_remove(metadata, '$.subjectId') WHERE json_extract(metadata, '$.sourceId') = ?",
+    note.subject ? [note.subject, note.id] : [note.id]
+  );
+}
+
+/**
  * Expensive: re-chunks and re-embeds the note so search and Ask see the edit.
  * Call it when the person leaves the note, not while they are typing.
  */
@@ -1087,6 +1128,8 @@ export async function reindexNote(rag: RAG, db: DB, id: string): Promise<void> {
         title: note.title,
         createdAt: note.createdAt,
         chunk,
+        // What the Tutor's subject scope filters on — see scopeSql.
+        ...(note.subject ? { subjectId: note.subject } : {}),
       })),
   });
 }

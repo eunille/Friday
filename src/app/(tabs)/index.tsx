@@ -27,6 +27,7 @@ import {
   ModelGate,
   TIERS,
   getChat,
+  listNotes,
   newChatId,
   newNoteId,
   readSource,
@@ -459,9 +460,10 @@ function Chat(): JSX.Element {
       setDraft("");
       setTest(null);
 
-      // Nothing to test on: no topic, and no notes chosen to take one from.
-      // Asked here, not by the model — it would only invent a topic.
-      if (!topic && scope.kind !== "sources") {
+      // Nothing to test on: no topic, and no notes or subject chosen to take
+      // one from. Asked here, not by the model — it would only invent a topic.
+      const named = scope.kind === "sources" || scope.kind === "subject";
+      if (!topic && !named) {
         const next: Entry[] = [
           ...asked,
           {
@@ -479,10 +481,16 @@ function Chat(): JSX.Element {
       try {
         let context = "";
         let cites: Cite[] = [];
-        if (scope.kind === "sources" && !topic && db) {
-          // "Test me on my notes": the chosen notes themselves, not a search
-          // for a topic nobody named.
-          const bodies = await Promise.all(scope.ids.map((id) => readSource(db, id)));
+        if (named && !topic && db) {
+          // "Test me on my notes": the chosen notes themselves — or every note
+          // in the chosen subject — not a search for a topic nobody named.
+          const ids =
+            scope.kind === "sources"
+              ? scope.ids
+              : (await listNotes(db))
+                  .filter((note) => scope.kind === "subject" && note.subject === scope.id)
+                  .map((note) => note.id);
+          const bodies = await Promise.all(ids.map((id) => readSource(db, id)));
           context = clampForPrompt(bodies.join("\n\n"));
         } else if (scope.kind !== "none" && db && embed) {
           const chunks = await retrieve({ db, embed, query: topic, scope, limit: 6 });
@@ -636,7 +644,7 @@ function Chat(): JSX.Element {
         setTest(null);
         const ids = scope.kind === "sources" ? scope.ids : [];
         const reply: Entry =
-          !wanted.topic && scope.kind !== "sources"
+          !wanted.topic && scope.kind !== "sources" && scope.kind !== "subject"
             ? {
                 role: "assistant",
                 content:
@@ -648,13 +656,21 @@ function Chat(): JSX.Element {
                 quiz: {
                   topic: wanted.topic,
                   count: wanted.count,
-                  sources: scope.kind === "all" ? "*" : ids.join(","),
+                  // "@" marks a subject — see the Quiz page for the encoding.
+                  sources:
+                    scope.kind === "all"
+                      ? "*"
+                      : scope.kind === "subject"
+                        ? `@${scope.id}`
+                        : ids.join(","),
                   basis:
                     scope.kind === "all"
                       ? "all your notes"
-                      : ids.length > 0
-                        ? `${ids.length} selected`
-                        : "general knowledge",
+                      : scope.kind === "subject"
+                        ? scope.id
+                        : ids.length > 0
+                          ? `${ids.length} selected`
+                          : "general knowledge",
                 },
               };
         const next: Entry[] = [...entries, { role: "user", content: text }, reply];
