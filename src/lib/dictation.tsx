@@ -5,6 +5,7 @@ import { models, useSpeechToText } from "react-native-executorch";
 import { useConfirm } from "../components/dialog";
 import { useAI } from "./ai";
 import { concatFloat32 } from "./formats";
+import { LISTENING, listen as listenStep, rmsOf, type Stop } from "./voice";
 
 /**
  * Whisper is trained on 16 kHz mono audio. The recorder treats this as a
@@ -27,6 +28,20 @@ export type Dictation = {
   toggle: () => void;
   /** Render this somewhere: it is the one-time "this costs 222 MB" question. */
   dialog: JSX.Element;
+  /** Whisper is loaded and can transcribe now. */
+  ready: boolean;
+  /** Load Whisper without recording — so talk mode is warm before its first turn. */
+  prepare: () => void;
+  /** True while listen() has the mic open. */
+  listening: boolean;
+  /**
+   * Hands-free: record until the person has finished speaking, then hand back
+   * what they said — "" if they said nothing, or the turn was cancelled.
+   * Does not call onText; the caller decides what the words are for.
+   */
+  listen: () => Promise<string>;
+  /** End a listen() now, with nothing heard. */
+  cancelListen: () => void;
 };
 
 /**
@@ -60,6 +75,84 @@ export function useDictation(onText: (text: string) => void): Dictation {
     model: models.speech_to_text.whisper_tiny_en(),
     preventLoad: !armed,
   });
+  // listen() is a long-lived promise; it must transcribe with the model as it
+  // is when the person stops talking, not as it was when they started.
+  const sttRef = useRef(stt);
+  useEffect(() => {
+    sttRef.current = stt;
+  }, [stt]);
+
+  const [listening, setListening] = useState(false);
+  // Ends the listen() in flight, if any. Held here so cancelListen can reach
+  // a promise it did not create.
+  const settle = useRef<(() => void) | null>(null);
+
+  const listen = useCallback(async (): Promise<string> => {
+    setNotice(null);
+    setArmed(true);
+    if ((await AudioManager.requestRecordingPermissions()) !== "Granted") {
+      setNotice("Microphone access is off. Turn it on in Settings to talk.");
+      return "";
+    }
+
+    const active = new AudioRecorder();
+    const heard: Float32Array[] = [];
+    let state = LISTENING;
+
+    return new Promise<string>((resolve) => {
+      let done = false;
+      const end = async (why: Stop | "cancelled"): Promise<void> => {
+        if (done) return;
+        done = true;
+        settle.current = null;
+        await active.stop();
+        active.clearOnAudioReady();
+        if (recorder.current === active) recorder.current = null;
+        setListening(false);
+        // Nothing said, or cancelled: no transcription, which on silence would
+        // only produce Whisper's habit of hallucinating "Thank you."
+        if (why === "nothing" || why === "cancelled") {
+          resolve("");
+          return;
+        }
+        try {
+          const { text } = await sttRef.current.transcribe(concatFloat32(heard));
+          resolve(text.trim());
+        } catch (error) {
+          setNotice(error instanceof Error ? error.message : String(error));
+          resolve("");
+        }
+      };
+      settle.current = () => void end("cancelled");
+
+      active.onAudioReady(
+        { sampleRate: WHISPER_SAMPLE_RATE, bufferLength: 4096, channelCount: 1 },
+        (event) => {
+          const samples = Float32Array.from(event.buffer.getChannelData(0));
+          heard.push(samples);
+          const step = listenStep(
+            state,
+            rmsOf(samples),
+            (samples.length / WHISPER_SAMPLE_RATE) * 1000
+          );
+          state = step.next;
+          if (step.stop) void end(step.stop);
+        }
+      );
+
+      void active.start().then((started) => {
+        if (started.status === "error") {
+          setNotice(started.message);
+          void end("cancelled");
+          return;
+        }
+        recorder.current = active;
+        setListening(true);
+      });
+    });
+  }, []);
+
+  const cancelListen = useCallback(() => settle.current?.(), []);
 
   // Stop the mic if the screen goes away mid-recording.
   useEffect(
@@ -160,5 +253,10 @@ export function useDictation(onText: (text: string) => void): Dictation {
     dismiss: () => setNotice(null),
     toggle,
     dialog: confirm.dialog,
+    ready: stt.isReady,
+    prepare: () => setArmed(true),
+    listening,
+    listen,
+    cancelListen,
   };
 }

@@ -26,6 +26,17 @@ export type Reader = {
   toggle: (key: string, text: string) => void;
   /** Render this somewhere: it is the one-time "this costs 335 MB" question. */
   dialog: JSX.Element;
+  /** Kokoro is loaded and can speak now. */
+  ready: boolean;
+  /** Load Kokoro without speaking — so talk mode is warm before its first reply. */
+  prepare: () => void;
+  /**
+   * Hands-free: read this aloud and resolve when it has finished, or been
+   * stopped. Never asks about the download — talk mode asks once for both
+   * voices up front.
+   */
+  say: (key: string, text: string) => Promise<void>;
+  stop: () => void;
 };
 
 /**
@@ -67,6 +78,16 @@ export function useReader(): Reader {
     ttsRef.current = tts;
   }, [tts]);
 
+  // Resolves the say() in flight. Called whenever a reading ends for any
+  // reason — finished, stopped, failed, replaced — so a caller awaiting it can
+  // never be left waiting on audio that is not coming.
+  const settle = useRef<(() => void) | null>(null);
+  const release = useCallback(() => {
+    const resolve = settle.current;
+    settle.current = null;
+    resolve?.();
+  }, []);
+
   /** Silence now, and let the audio context go. Safe to call twice. */
   const halt = useCallback(() => {
     const active = playback.current;
@@ -101,6 +122,7 @@ export function useReader(): Reader {
         if (playback.current?.queue !== queue) return;
         halt();
         setSpeaking(null);
+        release();
       };
       queue.onBufferEnded = () => {
         queued -= 1;
@@ -127,16 +149,18 @@ export function useReader(): Reader {
       } catch (error) {
         setOwnNotice(error instanceof Error ? error.message : String(error));
         finish();
+        release();
       }
     },
-    [halt]
+    [halt, release]
   );
 
   const stop = useCallback(() => {
     ttsRef.current.streamStop(true);
     halt();
     setSpeaking(null);
-  }, [halt]);
+    release();
+  }, [halt, release]);
 
   // Once the voice is loaded, read whatever was asked for while it was not.
   useEffect(() => {
@@ -201,9 +225,31 @@ export function useReader(): Reader {
     [speaking, preparingKey, tts.isReady, readerReady, play, stop, confirm]
   );
 
+  const say = useCallback(
+    (key: string, text: string) =>
+      new Promise<void>((resolve) => {
+        // A say() already waiting is ended, not orphaned.
+        release();
+        settle.current = resolve;
+        if (ttsRef.current.isReady) {
+          void play(key, text);
+          return;
+        }
+        pending.current = { key, text };
+        setPreparingKey(key);
+        setArmed(true);
+      }),
+    [play, release]
+  );
+
   // Derived rather than set from an effect: a failed load is a fact about the
   // model, and the waiting reply stops waiting the moment that fact exists.
   const failed = armed && tts.error ? tts.error.message : null;
+
+  // A load that failed will never speak, so anyone awaiting it is let go.
+  useEffect(() => {
+    if (failed) release();
+  }, [failed, release]);
 
   return {
     speaking,
@@ -213,5 +259,9 @@ export function useReader(): Reader {
     dismiss: () => setOwnNotice(null),
     toggle,
     dialog: confirm.dialog,
+    ready: tts.isReady,
+    prepare: () => setArmed(true),
+    say,
+    stop,
   };
 }

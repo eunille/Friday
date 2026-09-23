@@ -3,7 +3,7 @@ import { Typography } from "heroui-native";
 import { useCallback, type JSX, type ReactNode } from "react";
 import { Pressable, TextInput, View } from "react-native";
 
-import { useDictation } from "../lib/dictation";
+import { useDictation, type Dictation } from "../lib/dictation";
 import { usePalette } from "../lib/theme";
 
 /**
@@ -35,6 +35,7 @@ export function Composer({
   bottomInset = 0,
   controls,
   footnote,
+  dictation: shared,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -52,17 +53,26 @@ export function Composer({
   controls?: ReactNode;
   /** A line under the field. */
   footnote?: ReactNode;
+  /**
+   * The screen's own dictation, when it needs the mic for more than this field
+   * — the Tutor's talk mode. One Whisper per screen: two instances would each
+   * hold a 222 MB model.
+   */
+  dictation?: Dictation;
 }): JSX.Element {
   const palette = usePalette();
 
   // Dictated words join the draft rather than sending straight away, so a
-  // misheard word can be fixed before anything acts on it.
-  const dictation = useDictation(
+  // misheard word can be fixed before anything acts on it. Always created,
+  // since a hook cannot be skipped — but it loads nothing until first used,
+  // so an unused one costs nothing.
+  const own = useDictation(
     useCallback(
       (heard: string) => onChange(value.trim() ? `${value.trim()} ${heard}` : heard),
       [onChange, value]
     )
   );
+  const dictation = shared ?? own;
 
   const ready = editable && value.trim() !== "";
 

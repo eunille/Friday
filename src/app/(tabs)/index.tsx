@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Typography } from "heroui-native";
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import { FlatList, Pressable, View } from "react-native";
@@ -12,6 +12,7 @@ import Animated, {
 import type { Message } from "react-native-rag";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useConfirm } from "../../components/dialog";
 import { IconButton, Mascot } from "../../components/screen";
 import {
   KnowledgeSheet,
@@ -39,6 +40,7 @@ import {
   useAI,
 } from "../../lib/ai";
 import { clampForPrompt, parseQuiz, trimToSentence, type QuizQuestion } from "../../lib/formats";
+import { useDictation } from "../../lib/dictation";
 import { useReader } from "../../lib/reader";
 import { asContext, retrieve, type Chunk, type Scope } from "../../lib/retrieval";
 import {
@@ -49,8 +51,10 @@ import {
   detectQuiz,
   scoreLine,
   testPrompt,
+  verdict,
   type Mode,
 } from "../../lib/tutor";
+import { spokenChoice, spokenQuestion } from "../../lib/voice";
 import { Composer } from "../../components/composer";
 import { useKeyboardOverlap, usePalette } from "../../lib/theme";
 
@@ -298,7 +302,7 @@ function Turn({
 }
 
 function Chat(): JSX.Element {
-  const { rag, db, embed, tier, settings, invalidate } = useAI();
+  const { rag, db, embed, tier, settings, invalidate, voiceReady, readerReady } = useAI();
   const router = useRouter();
   const palette = usePalette();
   const insets = useSafeAreaInsets();
@@ -323,6 +327,14 @@ function Chat(): JSX.Element {
   // reply. Keys carry a conversation number, so starting a new chat cannot
   // hand message 3 of the new one the "speaking" state of message 3 of the old.
   const reader = useReader();
+  // The screen's one Whisper, shared with the composer's mic — see Composer.
+  const dictation = useDictation(
+    useCallback(
+      (heard: string) => setDraft((prev) => (prev.trim() ? `${prev.trim()} ${heard}` : heard)),
+      []
+    )
+  );
+  const confirm = useConfirm();
   const [conversation, setConversation] = useState(0);
   const readKey = (index: number): string => `${conversation}:${index}`;
   const listRef = useRef<FlatList<Entry>>(null);
@@ -359,9 +371,11 @@ function Chat(): JSX.Element {
     [db, invalidate]
   );
 
+  // Every path through here returns what it answered, so talk mode can say it
+  // aloud — or null when there is nothing worth saying.
   const ask = useCallback(
-    async (question: string, history: Entry[], as: Mode) => {
-      if (!rag || !question || busy) return;
+    async (question: string, history: Entry[], as: Mode): Promise<string | null> => {
+      if (!rag || !question || busy) return null;
 
       const asked: Entry[] = [...history, { role: "user", content: question }];
       setEntries(asked);
@@ -429,6 +443,7 @@ function Chat(): JSX.Element {
         // streaming copy of it — the answer flashing twice.
         setStreaming(null);
         await persist(finished);
+        return answer;
       } catch (error) {
         setEntries([
           ...asked,
@@ -439,6 +454,7 @@ function Chat(): JSX.Element {
             }`,
           },
         ]);
+        return null;
       } finally {
         setStreaming(null);
       }
@@ -452,8 +468,8 @@ function Chat(): JSX.Element {
    * pacing the student sees is the same.
    */
   const startTest = useCallback(
-    async (said: string, topic: string, history: Entry[]) => {
-      if (!rag || busy) return;
+    async (said: string, topic: string, history: Entry[]): Promise<string | null> => {
+      if (!rag || busy) return null;
 
       const asked: Entry[] = [...history, { role: "user", content: said }];
       setEntries(asked);
@@ -464,17 +480,12 @@ function Chat(): JSX.Element {
       // one from. Asked here, not by the model — it would only invent a topic.
       const named = scope.kind === "sources" || scope.kind === "subject";
       if (!topic && !named) {
-        const next: Entry[] = [
-          ...asked,
-          {
-            role: "assistant",
-            content:
-              "What should I test you on? Name a topic, or pick some notes with the notes chip below.",
-          },
-        ];
+        const reply =
+          "What should I test you on? Name a topic, or pick some notes with the notes chip below.";
+        const next: Entry[] = [...asked, { role: "assistant", content: reply }];
         setEntries(next);
         void persist(next);
-        return;
+        return reply;
       }
 
       setStreaming("");
@@ -556,6 +567,9 @@ function Chat(): JSX.Element {
         setEntries(next);
         setStreaming(null);
         await persist(next);
+        return first
+          ? spokenQuestion(1, items.length, first.question, first.options)
+          : (next[next.length - 1]?.content ?? null);
       } catch (error) {
         setEntries([
           ...asked,
@@ -566,6 +580,7 @@ function Chat(): JSX.Element {
             }`,
           },
         ]);
+        return null;
       } finally {
         setStreaming(null);
       }
@@ -573,21 +588,32 @@ function Chat(): JSX.Element {
     [rag, db, embed, busy, scope, persist]
   );
 
-  /** Marks the answer, then deals the next question or the score. No model call. */
+  /**
+   * Marks the answer, then deals the next question or the score. No model call.
+   *
+   * `said` is the words behind a typed or spoken answer — "B", "the second
+   * one" — kept as a bubble so the history shows what was heard, which is the
+   * first thing to check when a spoken answer was marked wrong.
+   *
+   * Returns what to say next: the verdict, then the next question or the score.
+   */
   const answer = useCallback(
-    (index: number, choice: number) => {
+    (index: number, choice: number, said?: string): string | null => {
       const entry = entries[index];
-      if (!test || !entry?.question || entry.question.chosen !== undefined) return;
+      if (!test || !entry?.question || entry.question.chosen !== undefined) return null;
 
-      const right = test.right + (choice === entry.question.correctIndex ? 1 : 0);
-      const answered = entries.map((item, at) =>
+      const { options, correctIndex } = entry.question;
+      const right = test.right + (choice === correctIndex ? 1 : 0);
+      const answered: Entry[] = entries.map((item, at) =>
         at === index && item.question
           ? { ...item, question: { ...item.question, chosen: choice } }
           : item
       );
+      if (said) answered.push({ role: "user", content: said });
       const upcoming = test.items[test.index + 1];
 
       let next: Entry[];
+      let spoken: string;
       if (upcoming) {
         next = [
           ...answered,
@@ -602,13 +628,21 @@ function Chat(): JSX.Element {
             },
           },
         ];
+        spoken = spokenQuestion(
+          test.index + 2,
+          test.items.length,
+          upcoming.question,
+          upcoming.options
+        );
         setTest({ ...test, index: test.index + 1, right });
       } else {
-        next = [...answered, { role: "assistant", content: scoreLine(right, test.items.length) }];
+        spoken = scoreLine(right, test.items.length);
+        next = [...answered, { role: "assistant", content: spoken }];
         setTest(null);
       }
       setEntries(next);
       void persist(next);
+      return `${verdict(options, correctIndex, choice)} ${spoken}`;
     },
     [entries, test, persist]
   );
@@ -632,9 +666,30 @@ function Chat(): JSX.Element {
    * else goes to whichever mode the chip is on.
    */
   const send = useCallback(
-    (raw: string) => {
+    async (raw: string, spoken = false): Promise<string | null> => {
       const text = raw.trim();
-      if (!text || busy) return;
+      if (!text || busy) return null;
+
+      // A question is waiting: "B", "the second one", "reliable delivery" is
+      // an answer to it, typed or said — not a new topic, which is what Test
+      // mode would otherwise make of it.
+      const waiting = entries[entries.length - 1];
+      if (test && waiting?.question && waiting.question.chosen === undefined) {
+        const choice = spokenChoice(text, waiting.question.options);
+        if (choice >= 0) {
+          setDraft("");
+          return answer(entries.length - 1, choice, text);
+        }
+        // Heard but not understood. Asked again rather than guessed, since a
+        // mishearing marked wrong is worse than a second ask. Typed, it falls
+        // through: a typed sentence during a test may be a new topic.
+        if (spoken) {
+          return `Sorry, which one? Say ${waiting.question.options
+            .map((_, index) => String.fromCharCode(65 + index))
+            .join(", ")
+            .replace(/, ([^,]*)$/, " or $1")}.`;
+        }
+      }
 
       // Asked to be *given* a quiz: a card that opens the Quiz page, in any
       // mode, without leaving it. Nothing to generate here — the page does
@@ -677,7 +732,8 @@ function Chat(): JSX.Element {
         setEntries(next);
         setDraft("");
         void persist(next);
-        return;
+        // A card cannot be read out, so say where to find it.
+        return reply.quiz ? `${reply.content} Tap Open quiz when you're ready.` : reply.content;
       }
 
       const hit = detectMode(text);
@@ -698,34 +754,141 @@ function Chat(): JSX.Element {
 
       // In Test mode a plain message is the topic — that is what the
       // placeholder asks for.
-      if (as === "test") {
-        void startTest(text, hit ? hit.topic : text, history);
-        return;
-      }
+      if (as === "test") return startTest(text, hit ? hit.topic : text, history);
 
       setTest(null);
 
       // A bare switch — "stop the test", "teach me" with nothing to teach —
       // gets a line from here rather than a model call about nothing.
       if (hit && !hit.topic) {
+        const reply =
+          as === "ask" ? "Okay — back to answering questions." : "Sure. What would you like to learn?";
         const next: Entry[] = [
           ...history,
           { role: "user", content: text },
-          {
-            role: "assistant",
-            content:
-              as === "ask" ? "Okay — back to answering questions." : "Sure. What would you like to learn?",
-          },
+          { role: "assistant", content: reply },
         ];
         setEntries(next);
         setDraft("");
         void persist(next);
-        return;
+        return reply;
       }
 
-      void ask(text, history, as);
+      return ask(text, history, as);
     },
-    [busy, entries, mode, scope, startTest, ask, persist]
+    [busy, entries, test, mode, scope, answer, startTest, ask, persist]
+  );
+
+  /* ---------------------------------------------------------- talk mode --- */
+
+  // Hands-free: listen until you stop talking, answer, say the answer, listen
+  // again — the same send() as typing, so every mode, the matcher and spoken
+  // test answers work by voice with no second code path to drift.
+  const [talk, setTalk] = useState<"off" | "warming" | "listening" | "thinking" | "speaking">(
+    "off"
+  );
+  const [talkNotice, setTalkNotice] = useState<string | null>(null);
+  const talking = useRef(false);
+  // The loop outlives many renders, so it reads the latest of these through
+  // refs rather than the ones that existed when it started — above all send,
+  // whose idea of the conversation changes after every turn.
+  const sendRef = useRef(send);
+  const warm = useRef({ mic: false, voice: false });
+  useEffect(() => {
+    sendRef.current = send;
+    warm.current = { mic: dictation.ready, voice: reader.ready };
+  }, [send, dictation.ready, reader.ready]);
+
+  const endTalk = useCallback(
+    (why?: string) => {
+      talking.current = false;
+      setTalk("off");
+      setTalkNotice(why ?? null);
+      dictation.cancelListen();
+      reader.stop();
+      // Stopped mid-answer: stop writing it too, or it finishes to nobody.
+      if (busy) void rag?.interrupt();
+    },
+    [dictation, reader, busy, rag]
+  );
+  // endTalk changes identity on every render — dictation and reader are fresh
+  // objects each time — so anything long-lived calls it through this. Two
+  // places would break without it: useFocusEffect re-runs its cleanup when
+  // its callback changes, which ended talk mode on the first re-render after
+  // it started; and the loop would call the endTalk from the turn it began,
+  // with that turn's out-of-date idea of whether an answer is being written.
+  const endTalkRef = useRef(endTalk);
+  useEffect(() => {
+    endTalkRef.current = endTalk;
+  }, [endTalk]);
+
+  const runTalk = useCallback(async () => {
+    talking.current = true;
+    setTalkNotice(null);
+    dictation.prepare();
+    reader.prepare();
+    setTalk("warming");
+    // Both voices loaded before the first turn: listening with no way to
+    // answer aloud, or answering with no way to hear the reply, is half a
+    // conversation.
+    while (talking.current && !(warm.current.mic && warm.current.voice)) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    let turn = 0;
+    while (talking.current) {
+      setTalk("listening");
+      const heard = await dictation.listen();
+      if (!talking.current) return;
+      if (!heard) {
+        // Silence twice would be a mic left open in a pocket. Once is enough
+        // to stop and say so.
+        endTalkRef.current("Talk mode stopped — I didn't hear anything.");
+        return;
+      }
+      setTalk("thinking");
+      const reply = await sendRef.current(heard, true);
+      if (!talking.current) return;
+      if (reply) {
+        setTalk("speaking");
+        await reader.say(`talk:${turn}`, reply);
+        turn += 1;
+      }
+    }
+  }, [dictation, reader]);
+
+  /**
+   * Asked once, for both voices together — talk mode needs both, and two
+   * download questions in a row for one button is one too many.
+   */
+  const toggleTalk = useCallback(() => {
+    if (talk !== "off") {
+      endTalk();
+      return;
+    }
+    const megabytes = (voiceReady ? 0 : 222) + (readerReady ? 0 : 335);
+    if (megabytes === 0) {
+      void runTalk();
+      return;
+    }
+    confirm.ask({
+      title: "Download the voice models?",
+      message: `Talk mode listens with Whisper and answers aloud with Kokoro — ${megabytes} MB, downloaded once. After that it works with the radio off.`,
+      action: "Download",
+      onConfirm: () => void runTalk(),
+    });
+  }, [talk, endTalk, voiceReady, readerReady, runTalk, confirm]);
+
+  // A tab stays mounted when you leave it, so without this the mic would stay
+  // open behind whatever screen you went to. Through the ref, with no
+  // dependencies — see endTalkRef.
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        if (talking.current) endTalkRef.current();
+      },
+      []
+    )
   );
 
   /** Drops the last answer and asks the same question again. */
@@ -879,6 +1042,70 @@ function Chat(): JSX.Element {
         }
       />
 
+      {/* What talk mode is doing, and the way out. Worded as instructions,
+          because the one thing a hands-free screen must never leave unclear
+          is whether it is listening. */}
+      {talk !== "off" && (
+        <View
+          accessibilityLiveRegion="polite"
+          className="mx-4 mb-2 flex-row items-center gap-2.5 rounded-2xl border px-3.5 py-2.5"
+          style={{
+            borderColor: talk === "listening" ? palette.warning : palette.border,
+            backgroundColor: talk === "listening" ? palette.warningSoft : palette.surface,
+          }}
+        >
+          <Ionicons
+            name={
+              talk === "listening"
+                ? "mic"
+                : talk === "speaking"
+                  ? "volume-high"
+                  : talk === "thinking"
+                    ? "ellipsis-horizontal"
+                    : "download-outline"
+            }
+            size={17}
+            color={talk === "listening" ? palette.warning : palette.muted}
+          />
+          <Typography.Paragraph className="flex-1 font-ui-medium text-[12.5px]" numberOfLines={2}>
+            {talk === "warming"
+              ? dictation.downloadProgress > 0 && dictation.downloadProgress < 1
+                ? `Getting the listening model · ${Math.round(dictation.downloadProgress * 100)}%`
+                : reader.downloadProgress > 0 && reader.downloadProgress < 1
+                  ? `Getting the voice · ${Math.round(reader.downloadProgress * 100)}%`
+                  : "Getting the voices ready…"
+              : talk === "listening"
+                ? "Listening — just talk. It answers when you stop."
+                : talk === "thinking"
+                  ? "Thinking…"
+                  : "Speaking — it will listen again when it's done."}
+          </Typography.Paragraph>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Stop talk mode"
+            onPress={() => endTalk()}
+            className="min-h-[34px] justify-center rounded-full border border-border bg-background px-3 active:opacity-70"
+          >
+            <Typography.Paragraph className="font-ui-bold text-[12px]">Stop</Typography.Paragraph>
+          </Pressable>
+        </View>
+      )}
+
+      {talk === "off" && talkNotice && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${talkNotice}. Dismiss.`}
+          onPress={() => setTalkNotice(null)}
+          className="mx-4 mb-2 flex-row items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2"
+        >
+          <Ionicons name="mic-off-outline" size={15} color={palette.muted} />
+          <Typography.Paragraph className="flex-1 font-ui text-[12px] text-muted" numberOfLines={2}>
+            {talkNotice}
+          </Typography.Paragraph>
+          <Ionicons name="close" size={15} color={palette.muted} />
+        </Pressable>
+      )}
+
       {reader.notice && (
         <Pressable
           accessibilityRole="button"
@@ -897,8 +1124,12 @@ function Chat(): JSX.Element {
       <Composer
         value={draft}
         onChange={setDraft}
-        onSend={() => send(draft)}
+        onSend={() => void send(draft)}
         placeholder={PLACEHOLDERS[mode]}
+        dictation={dictation}
+        // One conversation at a time: typing into a turn talk mode is in the
+        // middle of would race it for the same model.
+        editable={talk === "off"}
         busy={busy}
         onStop={() => void rag?.interrupt()}
         overlap={overlap}
@@ -918,6 +1149,29 @@ function Chat(): JSX.Element {
               hint="Choose which notes the tutor uses"
               onPress={() => setSheet("knowledge")}
             />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ selected: talk !== "off" }}
+              accessibilityLabel={
+                talk === "off" ? "Talk. Speak to the tutor and hear it answer." : "Stop talk mode"
+              }
+              onPress={toggleTalk}
+              className={`min-h-[34px] flex-row items-center gap-1.5 rounded-full border px-2.5 ${
+                talk === "off" ? "border-border" : "border-warning bg-warning-soft"
+              }`}
+            >
+              <Ionicons
+                name={talk === "off" ? "headset-outline" : "headset"}
+                size={14}
+                color={talk === "off" ? palette.muted : palette.warning}
+              />
+              <Typography.Paragraph
+                className="font-ui-medium text-[11px]"
+                style={{ color: talk === "off" ? palette.muted : palette.warning }}
+              >
+                Talk
+              </Typography.Paragraph>
+            </Pressable>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Change answer length and tone"
@@ -940,6 +1194,7 @@ function Chat(): JSX.Element {
         <KnowledgeSheet scope={scope} onPick={setScope} onClose={() => setSheet(null)} />
       )}
       {reader.dialog}
+      {confirm.dialog}
     </View>
   );
 }
