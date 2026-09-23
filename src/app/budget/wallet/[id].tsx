@@ -176,8 +176,9 @@ function Wallet(): JSX.Element {
         {/* The wallet's own colour, full width. On the dashboard this brand is
             one card among several; here it is the subject, so it carries the
             page the way --money carries the dashboard. */}
+        {/* Padding on the inner View, not the card — see BrandSurface. */}
         <View
-          className="gap-3 overflow-hidden rounded-[22px] p-4"
+          className="overflow-hidden rounded-[22px]"
           style={{
             backgroundColor: brand.colour,
             shadowColor: brand.colour,
@@ -188,6 +189,7 @@ function Wallet(): JSX.Element {
           }}
         >
           <BrandSurface colour={brand.colour} radius={22} />
+          <View className="gap-3 p-4">
           <View className="flex-row items-center gap-2.5">
             <BrandMark type={account.type} size={34} />
             <Text
@@ -216,6 +218,7 @@ function Wallet(): JSX.Element {
           <View className="flex-row flex-wrap gap-x-5 gap-y-1">
             <Flow icon="arrow-down" label="in this month" value={flow.inward} />
             <Flow icon="arrow-up" label="out this month" value={flow.outward} />
+          </View>
           </View>
         </View>
 

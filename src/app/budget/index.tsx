@@ -26,7 +26,6 @@ import {
   balanceOf,
   byCategory,
   monthKey,
-  dueDates,
   monthlyRepeat,
   monthsEnding,
   netWorth,
@@ -50,7 +49,6 @@ import {
   listGoals,
   listRecurring,
   listTxns,
-  runDue,
   saveAccount,
   saveRecurring,
   saveTxn,
@@ -295,14 +293,9 @@ function Budget(): JSX.Element {
     [bands, group]
   );
 
-  /** What repeats costs per month, and how much of it is waiting to be filed. */
+  /** What everything that repeats costs in a typical month. A forecast — it
+      never writes itself into the ledger. */
   const repeat = useMemo(() => monthlyRepeat(rules), [rules]);
-  // Pinned per render pass rather than re-read inside the loop, so every rule
-  // is counted against the same instant.
-  const dueNow = useMemo(() => {
-    const now = new Date();
-    return rules.reduce((sum, item) => sum + dueDates(item, now).length, 0);
-  }, [rules]);
 
   /**
    * What the Plan card says, in priority order: a budget being overspent is
@@ -405,17 +398,12 @@ function Budget(): JSX.Element {
     setRule(null);
     confirm.ask({
       title: `Delete ${target.label}?`,
-      message: "It stops repeating. Anything it already logged stays in the ledger.",
+      message: "It drops out of the monthly forecast. Your transactions are not touched.",
       action: "Delete",
       destructive: true,
       onConfirm: () => void deleteRecurring(db, target.id).then(refresh),
     });
   }, [db, rule, confirm, refresh]);
-
-  const catchUp = useCallback(() => {
-    if (!db) return;
-    void runDue(db).then(refresh);
-  }, [db, refresh]);
 
   const commit = useCallback(() => {
     if (!db || !draft) return;
@@ -498,11 +486,18 @@ function Budget(): JSX.Element {
         {/* The one saturated surface in the app. Money is the subject of this
             screen, so the headline carries the colour and everything below it
             stays quiet — one bold thing reads as emphasis, six read as noise. */}
+        {/* No padding on the card itself. An absolutely-positioned child takes
+            its width from the parent's border box but its height from the
+            content box, so a padded card left the wash 32dp short at the
+            bottom — the seam that read as the card being half-transparent.
+            With the padding on an inner View the two boxes are the same and
+            there is nothing left to disagree about. */}
         <View
-          className="gap-3 overflow-hidden rounded-[22px] p-4"
+          className="overflow-hidden rounded-[22px]"
           style={{ backgroundColor: palette.money }}
         >
           <BrandSurface colour={palette.money} radius={22} />
+          <View className="gap-3 p-4">
           <View className="flex-row items-center gap-3">
             {/* The one place in Money with a face. It is also the fastest way
                 to tell this screen from every other balance in the app. */}
@@ -585,6 +580,7 @@ function Budget(): JSX.Element {
               colour={palette.moneyForeground}
             />
           </View>
+          </View>
         </View>
 
         {/* Two figures that answer "what is already spoken for" and "am I on
@@ -605,20 +601,6 @@ function Budget(): JSX.Element {
               >
                 <Ionicons name="repeat" size={15} color={palette.warning} />
               </View>
-              {/* The badge earns its place: it is the only thing here that is
-                  asking to be acted on. */}
-              {dueNow > 0 && (
-                <View
-                  className="min-w-[18px] items-center rounded-full px-1.5 py-0.5"
-                  style={{ backgroundColor: palette.warning }}
-                >
-                  <Text
-                    style={{ color: "#fff", fontFamily: "Archivo_600SemiBold", fontSize: 9.5 }}
-                  >
-                    {dueNow} due
-                  </Text>
-                </View>
-              )}
             </View>
             <Text
               style={{
@@ -692,8 +674,13 @@ function Budget(): JSX.Element {
           })}
         </View>
 
+        {/* A View, not a fragment. The page's gap-4 only separates the
+            ScrollView's own children, and a tab's whole contents arrive as one
+            of them — so inside here the rhythm was zero and the filter chips
+            ended up wedged against the card above and the list below. The
+            wrapper gives the tab its own copy of the page rhythm. */}
         {tab === "wallets" && (
-          <>
+          <View className="gap-4">
             {/* Which band to show, in place. With four bands and nine kinds a
                 filter earns its row; with one band it would be a control that
                 can only ever do nothing, so it waits. */}
@@ -765,11 +752,11 @@ function Budget(): JSX.Element {
                 Add a wallet
               </Text>
             </Pressable>
-          </>
+          </View>
         )}
 
         {tab === "activity" && (
-          <>
+          <View className="gap-4">
             {/* The shape of the month, in place rather than one tap away. */}
             {txns.length > 0 && (
               <Pressable
@@ -800,16 +787,22 @@ function Budget(): JSX.Element {
               </Pressable>
             )}
 
-            <View className="flex-row gap-2">
-              {FILTERS.map((option) => (
-                <Chip
-                  key={option.key}
-                  label={option.label}
-                  on={filter === option.key}
-                  onPress={() => setFilter(option.key)}
-                />
-              ))}
-            </View>
+            {/* Scrolls, like the band filter above it. The four of them come
+                to 299dp, which fits a 360dp phone and not a 320dp one — and a
+                chip that is off the edge with nothing to drag is a filter
+                nobody can reach. */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="-mx-4">
+              <View className="flex-row gap-2 px-4">
+                {FILTERS.map((option) => (
+                  <Chip
+                    key={option.key}
+                    label={option.label}
+                    on={filter === option.key}
+                    onPress={() => setFilter(option.key)}
+                  />
+                ))}
+              </View>
+            </ScrollView>
 
             {shown.length === 0 ? (
               <Typography.Paragraph className="pt-4 text-center font-read text-muted text-[15px] leading-6">
@@ -830,7 +823,7 @@ function Budget(): JSX.Element {
                 ))}
               </View>
             )}
-          </>
+          </View>
         )}
 
         {tab === "plan" && (
@@ -873,8 +866,6 @@ function Budget(): JSX.Element {
         <RepeatsSheet
           rules={rules}
           accounts={live}
-          due={dueNow}
-          onCatchUp={catchUp}
           onEdit={(item) => {
             setRepeatsOpen(false);
             setRule(item);

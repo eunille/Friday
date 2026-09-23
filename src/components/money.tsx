@@ -372,7 +372,7 @@ export function WalletCard({
       accessibilityRole="button"
       accessibilityLabel={`${account.name}, ${brand.label}, ${peso(balance)}`}
       onPress={onPress}
-      className={`h-[104px] justify-between overflow-hidden rounded-[20px] p-3 active:opacity-90 ${
+      className={`h-[104px] overflow-hidden rounded-[20px] active:opacity-90 ${
         grow ? "flex-1" : "w-[158px]"
       }`}
       style={{
@@ -389,6 +389,9 @@ export function WalletCard({
       }}
     >
       <BrandSurface colour={brand.colour} radius={20} />
+      {/* Padding lives here so the Pressable's border box and content box are
+          the same — see BrandSurface for why that matters. */}
+      <View className="flex-1 justify-between p-3">
       <View className="flex-row items-center gap-1.5">
         <BrandMark type={account.type} size={22} />
         <Text
@@ -416,6 +419,7 @@ export function WalletCard({
         <Text style={{ color: "#fff", fontFamily: "Archivo_600SemiBold", fontSize: 17 }}>
           {peso(balance)}
         </Text>
+      </View>
       </View>
     </Pressable>
   );

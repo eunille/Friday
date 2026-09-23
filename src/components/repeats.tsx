@@ -206,21 +206,20 @@ export function RepeatEditor({
  * It used to be its own screen behind a tile. That is a lot of navigation for
  * a list most people touch twice a year — once to add rent, once when Netflix
  * goes up — so the dashboard carries the total and this opens for the detail.
+ *
+ * Nothing here writes a transaction. These rules say what a month costs; the
+ * ledger says what actually left a wallet, and the two are kept apart on
+ * purpose.
  */
 export function RepeatsSheet({
   rules,
   accounts,
-  due,
-  onCatchUp,
   onEdit,
   onAdd,
   onClose,
 }: {
   rules: readonly Recurring[];
   accounts: readonly Account[];
-  /** How many occurrences are waiting to be written to the ledger. */
-  due: number;
-  onCatchUp: () => void;
   onEdit: (rule: Recurring) => void;
   onAdd: () => void;
   onClose: () => void;
@@ -231,28 +230,20 @@ export function RepeatsSheet({
     <Drawer onClose={onClose}>
       <SheetHead title="What repeats" onClose={onClose} />
       <ScrollView contentContainerClassName="px-3 pt-2 pb-2 gap-2">
-        {due > 0 && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Add ${due} due repeats to the ledger`}
-            onPress={onCatchUp}
-            className="mx-1 flex-row items-center gap-3 rounded-2xl border border-border bg-background px-3.5 py-3 active:opacity-70"
-          >
-            <Ionicons name="download-outline" size={19} color={palette.accent} />
-            <View className="flex-1">
-              <Typography.Paragraph className="font-ui-medium text-[14px]">
-                {`${due} repeat${due === 1 ? "" : "s"} came due`}
-              </Typography.Paragraph>
-              <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
-                Add them to the ledger.
-              </Typography.Paragraph>
-            </View>
-          </Pressable>
+        {/* Said once, here, because the sheet used to have a button that wrote
+            these into the ledger and someone who remembers it deserves to know
+            it is gone rather than broken. */}
+        {rules.length > 0 && (
+          <Typography.Paragraph className="px-3 pb-1 font-ui text-muted text-[11.5px] leading-[17px]">
+            A forecast, not a ledger — none of these move money on their own. Log a bill when you
+            actually pay it.
+          </Typography.Paragraph>
         )}
 
         {rules.length === 0 ? (
           <Typography.Paragraph className="px-3 py-4 text-center font-read text-muted text-[14px] leading-[22px]">
             Nothing yet. Rent, Netflix, your salary: anything landing on the same day each month.
+            They shape the monthly forecast; they never move money on their own.
           </Typography.Paragraph>
         ) : (
           rules.map((rule) => {

@@ -1,7 +1,6 @@
 import type { DB } from "@op-engineering/op-sqlite";
 
 import {
-  dueDates,
   type Account,
   type Category,
   type Centavos,
@@ -343,43 +342,14 @@ export async function deleteRecurring(db: DB, id: string): Promise<void> {
   await db.execute("DELETE FROM recurring WHERE id = ?", [id]);
 }
 
-/**
- * Writes every occurrence that has come due and advances `lastRun`.
+/*
+ * A rule used to write itself into the ledger once it came due, which meant a
+ * balance could move because a date passed rather than because money did. It
+ * forecasts now and nothing else: `monthlyRepeat` states what the set costs in
+ * a typical month, `dueDates` still drives the reminders, and the transaction
+ * gets written when the bill is actually paid — by hand, or through Budget.
  *
- * `lastRun` is stored rather than worked out from the ledger, so opening the
- * screen twice in a day cannot write a bill twice. It is advanced only after
- * the rows are in: if the write fails halfway the rule stays behind and the
- * next run catches up, which is the safe direction to fail in — a duplicate is
- * visible and deletable, a silently skipped bill is neither.
- *
- * Returns how many rows were written, so the screen can say so.
+ * Rows earlier versions generated are left where they are. They are real
+ * entries in someone's history, and deleting them on upgrade would be the
+ * bigger surprise.
  */
-export async function runDue(db: DB, now = new Date()): Promise<number> {
-  const rules = await listRecurring(db);
-  let written = 0;
-
-  for (const rule of rules) {
-    const due = dueDates(rule, now);
-    if (due.length === 0) continue;
-
-    for (const at of due) {
-      await saveTxn(db, {
-        id: `${rule.id}-${at.slice(0, 10)}`,
-        kind: rule.kind,
-        amount: rule.amount,
-        accountId: rule.accountId,
-        ...(rule.category ? { category: rule.category } : {}),
-        note: rule.label,
-        at,
-      });
-      written += 1;
-    }
-
-    await db.execute("UPDATE recurring SET lastRun = ? WHERE id = ?", [
-      due[due.length - 1],
-      rule.id,
-    ]);
-  }
-
-  return written;
-}
