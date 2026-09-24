@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 import type { Account } from "./budget.ts";
-import { GUESS_LABELS, parseLine, parseMessage } from "./moneytalk.ts";
+import { GUESS_LABELS, parseBalance, parseLine, parseMessage } from "./moneytalk.ts";
 
 const accounts: Account[] = [
   { id: "g", name: "GCash", type: "gcash", openingBalance: 0 },
@@ -262,5 +262,100 @@ assert.equal(byPurpose("lunch 180 from savings")?.txn.kind, "expense");
 
 // And the words still work when they are genuinely verbs rather than wallets.
 assert.equal(byPurpose("saved 1000 to everyday")?.txn.kind, "income");
+
+/* ------------------------------------------ more ways to say an amount --- */
+
+assert.equal(read("lunch 1.5k from gcash")?.txn.amount, 150_000, "k shorthand");
+assert.equal(read("rent 12k from bpi")?.txn.amount, 1_200_000);
+assert.equal(read("coffee p150 from maya")?.txn.amount, 15_000, "P for peso");
+assert.equal(read("coffee 150 pesos from maya")?.txn.amount, 15_000);
+assert.equal(read("lunch 2.5k from gcash")?.txn.note, "Lunch", "no stray K on the row");
+
+// A sign is the plainest statement of direction, and needs no confirming.
+const plus = read("+500 gcash");
+assert.equal(plus?.txn.kind, "income");
+assert.deepEqual(plus?.guessed, []);
+const minus = read("-120 maya");
+assert.equal(minus?.txn.kind, "expense");
+assert.ok(!minus?.guessed.includes("kind"));
+assert.equal(read("minus 200 gcash")?.txn.kind, "expense");
+assert.ok(!read("minus 200 gcash")?.guessed.includes("kind"), "'minus' says it");
+assert.equal(read("deduct 300 from bpi")?.txn.kind, "expense");
+assert.equal(read("plus 1000 to maya")?.txn.kind, "income");
+
+// Whole words: "sent" is not inside "present", nor "plus" inside "surplus".
+assert.notEqual(read("surplus 500 cash")?.txn.kind, "income");
+
+/* --------------------------------------------- several in one sentence --- */
+
+const two = parseMessage("lunch 150 and coffee 120 from gcash", accounts, at);
+assert.equal(two.length, 2);
+assert.deepEqual(
+  two.map((draft) => draft.txn.accountId),
+  ["g", "g"],
+  "the piece without a wallet borrows the one the line named"
+);
+assert.equal(two[0].txn.category, "food");
+assert.equal(parseMessage("jeep 15, bus 40 from cash", accounts, at).length, 2);
+// Only one amount: one row, however many "and"s.
+assert.equal(parseMessage("bread and butter 80 from cash", accounts, at).length, 1);
+
+/* ------------------------------ withdrawals, cash-ins, held-value wallets --- */
+
+const atm = read("withdrew 1000 from bpi");
+assert.equal(atm?.txn.kind, "transfer", "a withdrawal lands in Cash, it is not spending");
+assert.equal(atm?.txn.accountId, "b");
+assert.equal(atm?.txn.toAccountId, "c");
+assert.equal(read("cash out 500 gcash")?.txn.toAccountId, "c");
+const cashIn = read("cash in 500 to gcash");
+assert.equal(cashIn?.txn.kind, "transfer");
+assert.equal(cashIn?.txn.accountId, "c");
+assert.equal(cashIn?.txn.toAccountId, "g");
+
+const held: Account[] = [
+  ...accounts,
+  { id: "cc", name: "BDO Card", type: "credit", openingBalance: 0 },
+  { id: "mp", name: "MP2", type: "mp2", openingBalance: 0 },
+  { id: "btc", name: "Coins", type: "crypto", openingBalance: 0 },
+  { id: "st", name: "COL", type: "stocks", openingBalance: 0 },
+  { id: "bl", name: "Bills", type: "maya", openingBalance: 0 },
+];
+const hold = (line: string) => parseLine(line, held, at);
+
+// Paying the card, an MP2 contribution, buying Bitcoin: money you still own.
+const card = hold("paid credit card 5000 from bpi");
+assert.equal(card?.txn.kind, "transfer");
+assert.equal(card?.txn.toAccountId, "cc");
+assert.equal(hold("paid 2000 to pag-ibig mp2 from bpi")?.txn.toAccountId, "mp");
+const btc = hold("bought 5000 bitcoin from gcash");
+assert.equal(btc?.txn.kind, "transfer", "buying Bitcoin moves money, it does not spend it");
+assert.equal(btc?.txn.accountId, "g");
+assert.equal(btc?.txn.toAccountId, "btc");
+const sold = hold("sold 3000 btc to gcash");
+assert.equal(sold?.txn.accountId, "btc");
+assert.equal(sold?.txn.toAccountId, "g");
+assert.equal(hold("invested 10k in stocks from bpi")?.txn.toAccountId, "st");
+
+// But paying for something *named like* a wallet is still spending.
+const bills = hold("paid bills 2000 from gcash");
+assert.equal(bills?.txn.kind, "expense", "a wallet called Bills is not where the money went");
+
+// Short aliases only as whole words: "eth" is not inside "something".
+assert.notEqual(hold("something 200 from cash")?.txn.accountId, "btc");
+
+/* ---------------------------------------------------------- set a balance --- */
+
+assert.deepEqual(parseBalance("set gcash to 1500", accounts), {
+  accountId: "g",
+  balance: 150_000,
+  source: "set gcash to 1500",
+});
+assert.equal(parseBalance("bitcoin is now worth 52k", held)?.balance, 5_200_000);
+assert.equal(parseBalance("my bpi balance is 20,000", accounts)?.accountId, "b");
+assert.equal(parseBalance("maya now 800", accounts)?.balance, 80_000);
+// Not balances: a transaction, a question, an unknown wallet.
+for (const line of ["sent 500 to gcash", "how much is in gcash", "set lunch to 200", "gcash 500"]) {
+  assert.equal(parseBalance(line, accounts), null, line);
+}
 
 console.log("moneytalk: all checks passed");

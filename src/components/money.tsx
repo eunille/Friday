@@ -71,6 +71,13 @@ const BRAND_LOGOS: Partial<Record<AccountType, number>> = {
   // ponytail: the only card mark supplied was Visa, so every credit account
   // wears it. Swap to per-card brands when someone actually holds two.
   credit: require("../../assets/images/brands/visa.png"),
+  mp2: require("../../assets/images/brands/mp2.jpg"),
+};
+
+/** No logo file, but a symbol everyone reads faster than an initial. */
+const BRAND_ICONS: Partial<Record<AccountType, string>> = {
+  crypto: "logo-bitcoin",
+  stocks: "trending-up",
 };
 
 /** Mix a #rrggbb toward white (ratio > 0) or black (ratio < 0). */
@@ -184,7 +191,9 @@ export function BrandMark({ type, size }: { type: AccountType; size: number }): 
         borderColor: "rgba(0,0,0,0.12)",
       }}
     >
-      {logo === undefined ? (
+      {logo === undefined && BRAND_ICONS[type] ? (
+        <Ionicons name={BRAND_ICONS[type] as never} size={size * 0.56} color={brand.colour} />
+      ) : logo === undefined ? (
         <Text
           style={{
             color: brand.colour,
@@ -392,34 +401,39 @@ export function WalletCard({
       {/* Padding lives here so the Pressable's border box and content box are
           the same — see BrandSurface for why that matters. */}
       <View className="flex-1 justify-between p-3">
-      <View className="flex-row items-center gap-1.5">
-        <BrandMark type={account.type} size={22} />
-        <Text
-          numberOfLines={1}
-          style={{
-            flex: 1,
-            color: "#fff",
-            opacity: 0.9,
-            fontFamily: "Archivo_500Medium",
-            fontSize: 11.5,
-          }}
-        >
-          {brand.label}
-        </Text>
-      </View>
-      <View>
-        {/* The purpose leads, the balance sits under it. You scan these to find
+        <View className="flex-row items-center gap-1.5">
+          <BrandMark type={account.type} size={22} />
+          <Text
+            numberOfLines={1}
+            style={{
+              flex: 1,
+              color: "#fff",
+              opacity: 0.9,
+              fontFamily: "Archivo_500Medium",
+              fontSize: 11.5,
+            }}
+          >
+            {brand.label}
+          </Text>
+        </View>
+        <View>
+          {/* The purpose leads, the balance sits under it. You scan these to find
             "the one I pay bills from", not to read nine brand names. */}
-        <Text
-          numberOfLines={1}
-          style={{ color: "#fff", fontFamily: "Archivo_500Medium", fontSize: 11.5, opacity: 0.82 }}
-        >
-          {account.name}
-        </Text>
-        <Text style={{ color: "#fff", fontFamily: "Archivo_600SemiBold", fontSize: 17 }}>
-          {peso(balance)}
-        </Text>
-      </View>
+          <Text
+            numberOfLines={1}
+            style={{
+              color: "#fff",
+              fontFamily: "Archivo_500Medium",
+              fontSize: 11.5,
+              opacity: 0.82,
+            }}
+          >
+            {account.name}
+          </Text>
+          <Text style={{ color: "#fff", fontFamily: "Archivo_600SemiBold", fontSize: 17 }}>
+            {peso(balance)}
+          </Text>
+        </View>
       </View>
     </Pressable>
   );
@@ -1087,7 +1101,10 @@ export function CategoryPicker({
   return (
     <Drawer onClose={onClose}>
       <SheetHead title="What for" onClose={onClose} />
-      <ScrollView contentContainerClassName="px-3 pt-2 pb-2 gap-2" keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerClassName="px-3 pt-2 pb-2 gap-2"
+        keyboardShouldPersistTaps="handled"
+      >
         <View className="flex-row items-center gap-2 px-1">
           <TextInput
             value={own}

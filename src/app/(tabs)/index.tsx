@@ -26,7 +26,6 @@ import {
 import {
   LENGTHS,
   ModelGate,
-  TIERS,
   getChat,
   listNotes,
   newChatId,
@@ -304,7 +303,7 @@ function Turn({
 }
 
 function Chat(): JSX.Element {
-  const { rag, db, embed, tier, settings, invalidate, readerReady } = useAI();
+  const { rag, db, embed, settings, invalidate, readerReady } = useAI();
   const router = useRouter();
   const palette = usePalette();
   const insets = useSafeAreaInsets();
@@ -943,17 +942,6 @@ function Chat(): JSX.Element {
         >
           Tutor
         </Typography.Heading>
-        {tier && (
-          <View className="mr-1 flex-row items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-1">
-            <View
-              className="h-1.5 w-1.5 rounded-full"
-              style={{ backgroundColor: palette.onDevice }}
-            />
-            <Typography.Paragraph className="font-ui-medium text-[10.5px] text-on-device">
-              {TIERS[tier].label} · offline
-            </Typography.Paragraph>
-          </View>
-        )}
         <IconButton
           name="time-outline"
           label="Past conversations"

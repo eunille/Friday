@@ -15,9 +15,11 @@
  */
 
 import {
+  ACCOUNT_TYPES,
   categoryOf,
   parseAmount,
   type Account,
+  type AccountType,
   type Category,
   type IncomeSource,
   type Txn,
@@ -158,6 +160,16 @@ const INCOME_WORDS = [
   "kita",
   "commission",
   "payout",
+  "earned",
+  "credited",
+  "cashback",
+  "dividend",
+  "dividends",
+  "interest",
+  "sold",
+  "won",
+  "natanggap",
+  "plus",
 ];
 
 /** Which income source a line names, so it is not all filed under "Other". */
@@ -174,8 +186,9 @@ const TRANSFER_WORDS = [
   "transferred",
   "moved",
   "move",
-  "cash in",
-  "cash out",
+  // Spelled as norm() folds them — see there.
+  "cashin",
+  "cashout",
   "sent",
   "send",
   "withdrew",
@@ -227,7 +240,29 @@ const SPEND_WORDS = [
   "gumastos",
   "binili",
   "bumili",
+  "minus",
+  "deduct",
+  "deducted",
+  "subtract",
+  "less",
+  "bawas",
+  "binawas",
+  "charged",
+  "fee",
 ];
+
+/**
+ * Wallets that hold value rather than spend it. Paying into one — the card
+ * bill, an MP2 contribution, buying Bitcoin — moves money you still own, so
+ * it is a transfer, not spending that shrinks your net worth.
+ */
+const HOLDS: ReadonlySet<AccountType> = new Set(["credit", "mp2", "crypto", "stocks"]);
+const INVESTED: ReadonlySet<AccountType> = new Set(["mp2", "crypto", "stocks"]);
+
+const PAY_WORDS = ["paid", "pay", "bayad", "nagbayad", "bought", "buy", "binili", "bumili"];
+const INVEST_WORDS = ["invest", "invested", "contributed", "contribution", "hulog", "save"];
+const SELL_WORDS = ["sold", "sell", "benta", "binenta"];
+const WITHDRAW_WORDS = ["withdrew", "withdraw", "withdrawal", "cashout", "atm"];
 
 /**
  * Words that mark the wallet as the *source* of the money: "250 gym from
@@ -251,20 +286,66 @@ function findWhen(text: string, now: Date): Date {
   return then;
 }
 
+/**
+ * Lowercased, punctuation out — except what amounts use, "+" and "-" among
+ * them. "Cash in" and "cash out" are folded to one word first, because "cash"
+ * on its own is a wallet: left apart, "cash out 1000 from bpi" named the Cash
+ * wallet as the source.
+ */
 function norm(text: string): string {
-  return text.toLowerCase().replace(/[^\p{L}\p{N}\s.,₱-]/gu, " ");
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s.,₱+-]/gu, " ")
+    .replace(/\bcash[\s-]?(in|out)\b/g, "cash$1");
+}
+
+/**
+ * What people call a wallet besides its name and type. Nobody says "crypto"
+ * when they mean their Bitcoin, or "credit" when they mean the card.
+ */
+const TYPE_ALIASES: Partial<Record<AccountType, readonly string[]>> = {
+  credit: ["credit card", "card"],
+  mp2: ["mp2", "pag-ibig", "pagibig", "pag ibig"],
+  crypto: ["bitcoin", "btc", "ethereum", "eth", "usdt", "solana", "coins.ph", "binance"],
+  stocks: ["stock", "stocks", "shares", "col financial", "pse"],
+  landbank: ["lbp"],
+  metrobank: ["metro bank"],
+  gotyme: ["go tyme"],
+  seabank: ["sea bank"],
+};
+
+/**
+ * Every word that means this wallet, longest first. "Other" is left out: as a
+ * type or label it is also an ordinary English word, and "other 200" is not a
+ * wallet.
+ */
+function aliasesOf(account: Account): string[] {
+  const names = [
+    account.name,
+    ...(account.type === "other" ? [] : [account.type, ACCOUNT_TYPES[account.type]?.label ?? ""]),
+    ...(TYPE_ALIASES[account.type] ?? []),
+  ];
+  return [...new Set(names.map((name) => name.toLowerCase().trim()))].filter(
+    (name) => name.length >= 2
+  );
+}
+
+/**
+ * The alias as a whole word. Substring matching made "eth" a wallet inside
+ * "something" and "card" one inside "discarded".
+ */
+function wordRe(alias: string, flags = ""): RegExp {
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(alias)}(?![\\p{L}\\p{N}])`, `u${flags}`);
 }
 
 /** Longest alias first, so "bpi savings" is not beaten by a bare "bpi". */
 function findAccount(text: string, accounts: readonly Account[]): Account | null {
   const candidates = accounts
-    .flatMap((account) =>
-      [account.name.toLowerCase(), account.type.toLowerCase()].map((alias) => ({ account, alias }))
-    )
+    .flatMap((account) => aliasesOf(account).map((alias) => ({ account, alias })))
     .sort((a, b) => b.alias.length - a.alias.length);
 
   for (const { account, alias } of candidates) {
-    if (alias.length >= 2 && text.includes(alias)) return account;
+    if (wordRe(alias).test(text)) return account;
   }
   return null;
 }
@@ -292,8 +373,9 @@ function findSource(text: string): IncomeSource | null {
   return null;
 }
 
+/** Whole words only: "sent" is not in "present", nor "plus" in "surplus". */
 function has(text: string, words: readonly string[]): boolean {
-  return words.some((word) => text.includes(word));
+  return words.some((word) => wordRe(word).test(text));
 }
 
 /**
@@ -303,10 +385,20 @@ function has(text: string, words: readonly string[]): boolean {
  * and the first is taken, because people write the amount before the trailing
  * detail far more often than after it.
  */
-function findAmount(text: string): number | null {
+function findAmount(text: string): { amount: number; sign: "+" | "-" | null } | null {
+  // A sign, a peso mark written any of the ways people write it (₱, php, p),
+  // the number, then "k"/"m" shorthand or a trailing "pesos".
   const match =
-    /(?:^|\s)₱?\s*(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)(?=\s|$|[.,;])/.exec(text);
-  return match ? parseAmount(match[1]) : null;
+    /(?:^|\s)([+-])?\s*(?:₱|php|p)?\s*(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d+)?)\s*(k|m)?(?:\s*(?:php|pesos?))?(?=\s|$|[.,;!?])/.exec(
+      text
+    );
+  if (!match) return null;
+  const [, sign, digits, scale] = match;
+  const amount = scale
+    ? Math.round(Number(digits.replace(/,/g, "")) * (scale === "k" ? 1_000 : 1_000_000) * 100)
+    : parseAmount(digits);
+  if (amount === null || !Number.isFinite(amount)) return null;
+  return { amount, sign: (sign as "+" | "-" | undefined) ?? null };
 }
 
 /**
@@ -358,10 +450,7 @@ function escapeRe(text: string): string {
 function withoutAccounts(text: string, accounts: readonly Account[]): string {
   let rest = text;
   for (const account of accounts) {
-    for (const alias of [account.name.toLowerCase(), account.type.toLowerCase()]) {
-      if (alias.trim().length < 2) continue;
-      rest = rest.replace(new RegExp(escapeRe(alias), "g"), " ");
-    }
+    for (const alias of aliasesOf(account)) rest = rest.replace(wordRe(alias, "g"), " ");
   }
   return rest;
 }
@@ -372,7 +461,7 @@ function withoutAccounts(text: string, accounts: readonly Account[]): string {
  * which tells you anything the parsed fields do not already hold.
  */
 const FILLER =
-  /\b(i|my|me|mine|we|our|a|an|the|of|is|was|po|na|ko|ng|sa|yung|ung|lang|for|from|to|into|in|at|on|using|via|with|thru|through|galing|today|yesterday|kanina|spent|spend|spended|spending|paid|pay|bought|buy|used|saved|added|add|deposit|deposited|topped|top|up|put|sent|send|got|get|transfer|transferred|moved|move|withdrew|withdraw)\b/gi;
+  /\b(i|my|me|mine|we|our|a|an|the|of|is|was|po|na|ko|ng|sa|yung|ung|lang|for|from|to|into|in|at|on|using|via|with|thru|through|galing|today|yesterday|kanina|spent|spend|spended|spending|paid|pay|bought|buy|used|saved|added|add|deposit|deposited|topped|top|up|put|sent|send|got|get|transfer|transferred|moved|move|withdrew|withdraw|minus|deduct|deducted|less|plus|earned|received|invested|invest|cash in|cash out|pesos?|php)\b/gi;
 
 /**
  * A short label from the line: the words that are neither amount nor wallet.
@@ -380,16 +469,18 @@ const FILLER =
  * row — the amount is already the amount.
  */
 function describe(raw: string, accounts: readonly Account[]): string {
-  let stripped = raw.replace(/₱?\s*\d[\d,]*(\.\d{1,2})?/g, " ");
+  // The whole amount as findAmount reads it — sign, peso mark and "k" too, or
+  // "2.5k lunch" leaves a stray "K" on the row.
+  let stripped = raw.replace(
+    /(?<![\p{L}])[+-]?(?:₱|php|p)?\s*\d[\d,]*(?:\.\d+)?(?:\s*[km](?![\p{L}]))?/giu,
+    " "
+  );
   for (const account of accounts) {
-    // The type as well as the name. Stripping only the name left "I spended my
-    // gcash" on the row, because "gcash" is how the wallet was actually
+    // Every alias, not just the name. Stripping only the name left "I spended
+    // my gcash" on the row, because "gcash" is how the wallet was actually
     // referred to. Escaped, or a wallet called "Cash (USD)" throws on a bad
     // regex rather than saving.
-    for (const alias of [account.name, account.type]) {
-      if (alias.trim().length < 2) continue;
-      stripped = stripped.replace(new RegExp(escapeRe(alias), "gi"), " ");
-    }
+    for (const alias of aliasesOf(account)) stripped = stripped.replace(wordRe(alias, "gi"), " ");
   }
   const words = stripped
     .replace(FILLER, " ")
@@ -417,11 +508,17 @@ export function parseLine(
   if (raw === "" || accounts.length === 0) return null;
 
   const text = norm(raw);
-  const amount = findAmount(text);
-  if (amount === null || amount <= 0) return null;
+  const found = findAmount(text);
+  if (found === null || found.amount <= 0) return null;
+  const { amount, sign } = found;
 
   const at = findWhen(text, now).toISOString();
   const id = `${now.getTime().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const transfer = (from: Account, to: Account): Draft => ({
+    txn: { id, kind: "transfer", amount, accountId: from.id, toAccountId: to.id, at },
+    guessed: [],
+    source: raw,
+  });
 
   // Transfer is checked first: it is the only kind needing two accounts, and
   // "moved 2000 from maribank to gcash" also contains words the others match.
@@ -429,16 +526,38 @@ export function parseLine(
   const intent = withoutAccounts(text, accounts);
 
   const halves = transferHalves(text);
-  if (has(intent, TRANSFER_WORDS) && halves) {
+  if (halves) {
     const from = findAccount(halves.from, accounts);
     const to = findAccount(halves.to, accounts);
-    if (from && to && from.id !== to.id) {
-      return {
-        txn: { id, kind: "transfer", amount, accountId: from.id, toAccountId: to.id, at },
-        guessed: [],
-        source: raw,
-      };
+    if (
+      from &&
+      to &&
+      from.id !== to.id &&
+      // Two wallets named is not enough on its own: "paid bills 2000 from
+      // gcash" with a wallet called Bills is spending. It takes a word for
+      // moving money, or money going into something that holds value (the
+      // card bill, MP2, Bitcoin), or coming back out of an investment.
+      (has(intent, TRANSFER_WORDS) ||
+        has(intent, SAVED_WORDS) ||
+        has(intent, DEPOSIT_WORDS) ||
+        has(intent, INVEST_WORDS) ||
+        (has(intent, PAY_WORDS) && HOLDS.has(to.type)) ||
+        (has(intent, SELL_WORDS) && INVESTED.has(from.type)))
+    ) {
+      return transfer(from, to);
     }
+  }
+
+  // One end named, the other implied: a withdrawal lands in your Cash wallet,
+  // a cash-in comes out of it. "withdrew 1000 from bpi" is not spending.
+  const cash = accounts.find((account) => account.type === "cash");
+  if (cash && has(intent, WITHDRAW_WORDS)) {
+    const from = findAccount(halves ? halves.from : text, accounts);
+    if (from && from.id !== cash.id) return transfer(from, cash);
+  }
+  if (cash && has(intent, ["cashin"])) {
+    const to = findAccount(halves ? halves.to : text, accounts);
+    if (to && to.id !== cash.id) return transfer(cash, to);
   }
 
   const guessed: Guess[] = [];
@@ -453,7 +572,16 @@ export function parseLine(
   const earned = has(intent, INCOME_WORDS);
   const putAway = has(intent, SAVED_WORDS);
   const movedIn = has(intent, DEPOSIT_WORDS);
-  const kind: TxnKind = earned || putAway || movedIn ? "income" : "expense";
+  const spent = has(intent, SPEND_WORDS);
+  // A written sign is the plainest claim there is: "+500 gcash", "-120 maya".
+  const kind: TxnKind =
+    sign === "+"
+      ? "income"
+      : sign === "-"
+        ? "expense"
+        : (earned || putAway || movedIn) && !(spent && !earned)
+          ? "income"
+          : "expense";
 
   const category = kind === "expense" ? findCategory(intent) : null;
   if (kind === "expense" && !category) guessed.push("category");
@@ -462,10 +590,12 @@ export function parseLine(
   // things do, and any one is enough: a spending verb, naming the wallet the
   // money came *out* of, or naming what it was spent on. "250 gym from
   // savings" says it twice over, and used to be flagged anyway.
-  if ((putAway || movedIn) && !earned) guessed.push("kind");
+  if (sign) {
+    // Stated outright; nothing to confirm.
+  } else if (kind === "income" && (putAway || movedIn) && !earned) guessed.push("kind");
   else if (
     kind === "expense" &&
-    !has(intent, SPEND_WORDS) &&
+    !spent &&
     !(account && has(text, SOURCE_MARKERS)) &&
     !category
   ) {
@@ -490,6 +620,29 @@ export function parseLine(
   };
 }
 
+/**
+ * "lunch 150 and coffee 120 from gcash" is two things bought from one wallet.
+ * Split on "and", "&" or a comma-and-space — only when every piece has its own
+ * amount, so "bread and butter 80" stays one row — and a piece that names no
+ * wallet borrows the one the line does name.
+ */
+function splitItems(line: string, accounts: readonly Account[]): string[] {
+  const pieces = line.split(/\s*(?:,\s+|\s&\s|\band\b)\s*/i).filter(Boolean);
+  if (pieces.length < 2 || !pieces.every((piece) => findAmount(norm(piece)))) return [line];
+
+  const named = pieces.find((piece) => findAccount(norm(piece), accounts));
+  if (!named) return pieces;
+  const wallet = findAccount(norm(named), accounts)!;
+  // The words that named it — "from gcash" — so the borrowing piece reads the
+  // same way the naming one did.
+  const phrase =
+    /\b(?:from|using|via|with|thru|through|to|into|in|sa|galing)\b.*$/i.exec(named)?.[0] ??
+    wallet.name;
+  return pieces.map((piece) =>
+    findAccount(norm(piece), accounts) ? piece : `${piece} ${phrase}`
+  );
+}
+
 /** Every line that carried an amount. One message can log several at once. */
 export function parseMessage(
   message: string,
@@ -498,8 +651,40 @@ export function parseMessage(
 ): Draft[] {
   return message
     .split(/[\n;]+/)
+    .flatMap((line) => splitItems(line, accounts))
     .map((line) => parseLine(line, accounts, now))
     .filter((draft): draft is Draft => draft !== null);
+}
+
+/** "set gcash to 1500", "bitcoin is now worth 52k": what a wallet holds now. */
+export type BalanceSet = { accountId: string; balance: number; source: string };
+
+/**
+ * A statement of what a wallet holds, rather than something that happened.
+ *
+ * This is how an investment is kept honest offline: Bitcoin went up, so you
+ * say what it is worth now. It changes the balance and logs nothing, because
+ * a price moving is not income or spending — filing it as either would put
+ * the market in your monthly budget.
+ */
+export function parseBalance(line: string, accounts: readonly Account[]): BalanceSet | null {
+  const text = norm(line.trim()).replace(/[.!?]+$/, "");
+  const said =
+    /^(?:set|update|change|correct|make)\s+(?:my\s+)?(.+?)\s+(?:balance\s+)?(?:to|=|at)\s+(.+)$/.exec(
+      text
+    ) ??
+    /^(?:my\s+)?(.+?)\s+(?:balance\s+(?:is\s+)?(?:now\s+)?|(?:is\s+)?now\s+(?:worth\s+|at\s+)?|is\s+worth\s+|worth\s+|=\s*)(.+)$/.exec(
+      text
+    );
+  if (!said) return null;
+  const account = findAccount(said[1], accounts);
+  // Only the amount after the verb — "set gcash to 1500" has no other number
+  // to confuse it with, and nothing else may be left over.
+  const found = findAmount(said[2]);
+  if (!account || !found || found.sign === "-" || said[2].replace(/[\d,.₱+\skmphpesos]/gi, "")) {
+    return null;
+  }
+  return { accountId: account.id, balance: found.amount, source: line.trim() };
 }
 
 /** One line of plain English for a draft, used in the confirmation. */

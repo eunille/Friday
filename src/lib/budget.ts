@@ -77,8 +77,19 @@ export const ACCOUNT_TYPES = {
   bdo: { label: "BDO", group: "Banks", colour: "#00539F" },
   bpi: { label: "BPI", group: "Banks", colour: "#A6192E" },
   unionbank: { label: "UnionBank", group: "Banks", colour: "#F47920" },
+  landbank: { label: "Landbank", group: "Banks", colour: "#00843D" },
+  metrobank: { label: "Metrobank", group: "Banks", colour: "#003DA5" },
+  gotyme: { label: "GoTyme", group: "Banks", colour: "#00A6A6" },
+  seabank: { label: "SeaBank", group: "Banks", colour: "#EE4D2D" },
   cash: { label: "Cash", group: "Cash", colour: "#2E7D5B" },
   credit: { label: "Credit Card", group: "Credit", colour: "#6C4BD1" },
+  // Held, not spent: what is in these is still yours, so they count toward net
+  // worth like a bank. Valued in pesos — update the balance when the market
+  // moves, since an offline app has no price feed to do it for you.
+  // Sampled off the supplied logo's navy.
+  mp2: { label: "Pag-IBIG MP2", group: "Investments", colour: "#281C80" },
+  crypto: { label: "Crypto", group: "Investments", colour: "#F7931A" },
+  stocks: { label: "Stocks", group: "Investments", colour: "#0F766E" },
   other: { label: "Other", group: "Other", colour: "#5A6270" },
 } as const;
 
