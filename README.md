@@ -6,12 +6,12 @@ off a photographed label — and it does all of that on the phone. No account, n
 no server. After the first run it works in airplane mode.
 
 <p align="center">
-  <img src="assets/download-qr-1.3.3.png" width="220" alt="QR code that downloads the Android APK" />
+  <img src="assets/download-qr-1.3.4.png" width="220" alt="QR code that downloads the Android APK" />
 </p>
 
 <p align="center">
-  <b><a href="https://github.com/eunille/Friday/releases/download/1.3.3/Friday-1.3.3.apk">Download for Android</a></b><br />
-  <sub>Scan the code with an Android phone, or use the link. 101 MB, v1.3.3.</sub>
+  <b><a href="https://github.com/eunille/Friday/releases/download/1.3.4/Friday-1.3.4.apk">Download for Android</a></b><br />
+  <sub>Scan the code with an Android phone, or use the link. 101 MB, v1.3.4.</sub>
 </p>
 
 > Android will warn that this is from an unknown developer. That is expected — the app is
