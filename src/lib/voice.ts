@@ -130,6 +130,14 @@ export function speechGroups(
   }
   if (ends[ends.length - 1] !== text.length) ends.push(text.length);
 
+  // A sentence too long for one group — a note with no full stops — is broken
+  // at a space, or it starts late and, past 2048 characters, Kokoro refuses it.
+  for (let i = 0, from = 0; i < ends.length; from = ends[i]!, i += 1) {
+    if (ends[i]! - from <= knobs.MAX_GROUP) continue;
+    const space = text.lastIndexOf(" ", from + knobs.MAX_GROUP);
+    ends.splice(i, 0, space > from ? space + 1 : from + knobs.MAX_GROUP);
+  }
+
   const groups: { start: number; end: number }[] = [];
   let start = 0;
   let end = 0;

@@ -59,6 +59,12 @@ for (let i = 1; i < groups.length; i += 1) {
 const long = "One two three four five. ".repeat(20);
 assert.ok(speechGroups(long).every((group) => group.end - group.start <= READ.MAX_GROUP));
 assert.ok(speechGroups(long).length > 1);
+// One enormous sentence is broken at spaces too — Kokoro refuses 2048+ chars.
+const runOn = "word ".repeat(1000);
+const runOnGroups = speechGroups(runOn);
+assert.ok(runOnGroups.every((group) => group.end - group.start <= READ.MAX_GROUP));
+assert.equal(runOnGroups.at(-1)!.end, runOn.length);
+assert.equal(speechGroups("x".repeat(500)).length, 3, "no space: cut anyway");
 assert.deepEqual(speechGroups(""), []);
 assert.deepEqual(speechGroups("..."), [], "punctuation alone is nothing to say");
 assert.deepEqual(speechGroups("No full stop"), [{ start: 0, end: 12 }]);

@@ -175,10 +175,15 @@ export function useReader(): Reader {
             await new Promise((resolve) => setTimeout(resolve, 16));
           }
           if (!current()) return;
-          const made = await ttsRef.current.forward({
-            text: forSpeech(text.slice(group.start, group.end)),
-            speed: READ.SPEED,
-          });
+          // Copied into a real Float32Array: forward() hands back the native
+          // result as is, which has no .buffer for copyToChannel to read —
+          // the library's own stream() wraps it the same way.
+          const made = new Float32Array(
+            await ttsRef.current.forward({
+              text: forSpeech(text.slice(group.start, group.end)),
+              speed: READ.SPEED,
+            })
+          );
           if (!current()) return;
           // A zero-length buffer is refused, and the group still has to count.
           audios.push(made.length > 0 ? made : new Float32Array(KOKORO_SAMPLE_RATE / 100));
