@@ -6,7 +6,7 @@
  */
 import assert from "node:assert";
 
-import { spokenChoice, spokenQuestion } from "./voice.ts";
+import { READ, readyToPlay, speechGroups, spokenChoice, spokenQuestion } from "./voice.ts";
 
 const options = ["Two", "Three", "Four", "Five"];
 const picks = (said: string, expected: number): void =>
@@ -40,5 +40,37 @@ assert.equal(
   spokenQuestion(1, 5, "What does TCP guarantee?", ["Delivery", "Speed"]),
   "Question 1 of 5. What does TCP guarantee? A: Delivery. B: Speed."
 );
+
+/* --------------------------------------------------------- reading aloud --- */
+
+// Groups are spans of the original text: together they cover every sentence,
+// in order, and each ends on a sentence boundary.
+const reply =
+  "Yes. TCP is reliable. It numbers every byte, so lost data is resent and the receiver can put it back in order.\n\nUDP skips all of that, which is why games use it!";
+const groups = speechGroups(reply);
+const said = groups.map((group) => reply.slice(group.start, group.end));
+assert.ok(said[0]!.startsWith("Yes."), "short sentences are joined, not synthesised alone");
+assert.ok(said[0]!.includes("TCP is reliable."));
+assert.ok(said.at(-1)!.trim().endsWith("games use it!"));
+for (let i = 1; i < groups.length; i += 1) {
+  assert.equal(groups[i]!.start, groups[i - 1]!.end, "no text skipped or read twice");
+}
+// A long run of short sentences is split, never one enormous call.
+const long = "One two three four five. ".repeat(20);
+assert.ok(speechGroups(long).every((group) => group.end - group.start <= READ.MAX_GROUP));
+assert.ok(speechGroups(long).length > 1);
+assert.deepEqual(speechGroups(""), []);
+assert.deepEqual(speechGroups("..."), [], "punctuation alone is nothing to say");
+assert.deepEqual(speechGroups("No full stop"), [{ start: 0, end: 12 }]);
+
+// Start only once the buffer covers the rest at the measured rate.
+const state = { bufferedS: 3, producedS: 3, elapsedS: 6, remainingChars: 0, done: false };
+assert.equal(readyToPlay({ ...state, done: true }), true, "all made: play");
+assert.equal(readyToPlay({ ...state, producedS: 0 }), false, "nothing made yet");
+assert.equal(readyToPlay({ ...state, elapsedS: 2 }), true, "faster than real time: play now");
+// Half real time, ~15 s of reply left: needs ~15 s buffered first.
+const slow = { ...state, remainingChars: Math.round(15 * READ.CHARS_PER_S * READ.SPEED) };
+assert.equal(readyToPlay(slow), false);
+assert.equal(readyToPlay({ ...slow, bufferedS: 16 }), true);
 
 console.log("voice: all checks passed");

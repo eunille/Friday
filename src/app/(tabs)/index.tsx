@@ -857,9 +857,19 @@ function Chat(): JSX.Element {
 
   // Voice on: every reply is still written out, and read aloud as well. The
   // mic stays plain dictation, so there is one way in and one way out.
+  // With voice on, a reply is shown as it is said, not before: the words on
+  // screen keep pace with the voice. `upTo` is how far it has got.
+  const [reveal, setReveal] = useState<{ text: string; upTo: number } | null>(null);
   const speakReply = useCallback(
     (reply: string | null) => {
-      if (reply && voiceOn) void reader.say(`voice:${conversation}`, reply);
+      if (!reply || !voiceOn) return;
+      setReveal({ text: reply, upTo: 0 });
+      void reader
+        .say(`voice:${conversation}`, reply, (upTo) =>
+          setReveal((now) => (now?.text === reply ? { text: reply, upTo } : now))
+        )
+        // However it ended — finished, stopped, failed — the whole reply shows.
+        .then(() => setReveal((now) => (now?.text === reply ? null : now)));
     },
     [voiceOn, reader, conversation]
   );
@@ -922,8 +932,20 @@ function Chat(): JSX.Element {
     [entries, db, rag, invalidate]
   );
 
+  // Voice on: the reply stays hidden while it is written (the thinking dots
+  // show instead) and appears a sentence at a time as it is spoken. A reply
+  // that is a question card is spoken differently from how it reads, so it
+  // never matches `reveal.text` and shows whole.
+  const lastEntry = entries[entries.length - 1];
+  const revealing =
+    reveal && lastEntry?.role === "assistant" && lastEntry.content === reveal.text;
+  const settled: Entry[] = revealing
+    ? [...entries.slice(0, -1), { ...lastEntry, content: lastEntry.content.slice(0, reveal.upTo) }]
+    : entries;
   const shown: Entry[] =
-    streaming === null ? entries : [...entries, { role: "assistant", content: streaming }];
+    streaming === null
+      ? settled
+      : [...settled, { role: "assistant", content: voiceOn ? "" : streaming }];
 
   // Only the question being asked right now takes a tap.
   const last = entries[entries.length - 1];

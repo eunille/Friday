@@ -471,15 +471,18 @@ export function useSpeechToText(): {
 }
 
 /**
- * No voice in a browser. Ready, with nothing to say: Read aloud can be pressed
- * in the preview and simply finishes — silence rather than a fake voice.
+ * No voice in a browser. A silent stand-in that takes as long as a phone does:
+ * each call makes silence the length the words would take to say, at about
+ * half real time, so the reader's buffering and the words-as-spoken reveal
+ * can be watched in the preview.
  */
+const STUB_CHARS_PER_S = 14;
 export function useTextToSpeech(): {
   isReady: boolean;
   isGenerating: boolean;
   error: null;
   downloadProgress: number;
-  forward: () => Promise<Float32Array>;
+  forward: (input: { text?: string; speed?: number }) => Promise<Float32Array>;
   stream: () => Promise<void>;
   streamInsert: () => void;
   streamStop: () => void;
@@ -489,33 +492,72 @@ export function useTextToSpeech(): {
     isGenerating: false,
     error: null,
     downloadProgress: 1,
-    forward: () => Promise.resolve(new Float32Array()),
+    forward: ({ text = "", speed = 1 }) => {
+      const seconds = text.length / (STUB_CHARS_PER_S * speed);
+      return new Promise((resolve) =>
+        setTimeout(() => resolve(new Float32Array(Math.round(seconds * 24_000))), seconds * 500)
+      );
+    },
     stream: () => Promise.resolve(),
     streamInsert: () => undefined,
     streamStop: () => undefined,
   };
 }
 
-/** Just enough of react-native-audio-api's playback side for the reader to run. */
+type StubBuffer = { length: number; copyToChannel: () => void };
+
+/**
+ * Enough of react-native-audio-api's playback side for the reader to run: a
+ * queue that "plays" each buffer for as long as it lasts and reports its end.
+ */
 export class AudioContext {
   destination = {};
+  private sampleRate: number;
+  constructor(options?: { sampleRate?: number }) {
+    this.sampleRate = options?.sampleRate ?? 24_000;
+  }
   createBufferQueueSource(): {
     connect: () => void;
     start: () => void;
     stop: () => void;
-    enqueueBuffer: () => string;
+    enqueueBuffer: (buffer: StubBuffer) => string;
     onBufferEnded: null | (() => void);
   } {
-    return {
+    const rate = this.sampleRate;
+    const waiting: StubBuffer[] = [];
+    let playing = false;
+    let started = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const node = {
+      onBufferEnded: null as null | (() => void),
       connect: () => undefined,
-      start: () => undefined,
-      stop: () => undefined,
-      enqueueBuffer: () => "",
-      onBufferEnded: null,
+      start: () => {
+        started = true;
+        next();
+      },
+      stop: () => {
+        started = false;
+        clearTimeout(timer);
+      },
+      enqueueBuffer: (buffer: StubBuffer) => {
+        waiting.push(buffer);
+        if (started && !playing) next();
+        return String(waiting.length);
+      },
     };
+    const next = (): void => {
+      const buffer = waiting.shift();
+      playing = buffer !== undefined;
+      if (!buffer || !started) return;
+      timer = setTimeout(() => {
+        node.onBufferEnded?.();
+        next();
+      }, (buffer.length / rate) * 1000);
+    };
+    return node;
   }
-  createBuffer(): { copyToChannel: () => void } {
-    return { copyToChannel: () => undefined };
+  createBuffer(_channels: number, length: number): StubBuffer {
+    return { length, copyToChannel: () => undefined };
   }
   close(): Promise<void> {
     return Promise.resolve();

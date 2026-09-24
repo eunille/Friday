@@ -90,6 +90,93 @@ export function spokenChoice(heard: string, options: readonly string[]): number 
   return bestShare >= 0.5 && !tied ? best : -1;
 }
 
+/* --------------------------------------------------------- reading aloud --- */
+
+/**
+ * Knobs for read-aloud, the first place to look when it sounds wrong on a
+ * phone. Pausing mid-reply: raise LEAD_S. Too slow to start: lower it, or
+ * raise SPEED.
+ */
+export const READ = {
+  /** Kokoro's speed multiplier. A touch brisker than 1 reads as confident, not rushed. */
+  SPEED: 1.1,
+  /** Roughly how many characters of English Kokoro says per second at speed 1. */
+  CHARS_PER_S: 14,
+  /** Extra buffered audio before starting, to absorb a slow sentence. */
+  LEAD_S: 0.6,
+  /** A group this long is worth one call on its own; shorter sentences are joined. */
+  MIN_GROUP: 80,
+  /** Kokoro takes 128 phoneme tokens a call; a group is not grown past this. */
+  MAX_GROUP: 220,
+} as const;
+
+/**
+ * The reply cut into groups of whole sentences, as spans of the original text.
+ *
+ * Spans rather than strings so the screen can show exactly the text being
+ * spoken — a group's end is how far the reply has been read. Short sentences
+ * are joined because every call to the voice has a fixed cost, and "Yes."
+ * synthesised alone pays it for half a second of audio.
+ */
+export function speechGroups(
+  text: string,
+  knobs: typeof READ = READ
+): { start: number; end: number }[] {
+  // A sentence ends at . ! ? … (plus any closing quote or bracket) or a line break.
+  const ends: number[] = [];
+  const pattern = /[.!?…]+["')\]]*(?=\s|$)|\n+/g;
+  for (let match = pattern.exec(text); match; match = pattern.exec(text)) {
+    ends.push(match.index + match[0].length);
+  }
+  if (ends[ends.length - 1] !== text.length) ends.push(text.length);
+
+  const groups: { start: number; end: number }[] = [];
+  let start = 0;
+  let end = 0;
+  for (const next of ends) {
+    // Adding this sentence would overfill a group that already has one: close it.
+    if (end > start && next - start > knobs.MAX_GROUP) {
+      groups.push({ start, end });
+      start = end;
+    }
+    end = next;
+    if (end - start >= knobs.MIN_GROUP) {
+      groups.push({ start, end });
+      start = end;
+    }
+  }
+  if (end > start) groups.push({ start, end });
+  // Only text worth saying: whitespace and punctuation alone is nothing.
+  return groups.filter((group) => /[\p{L}\p{N}]/u.test(text.slice(group.start, group.end)));
+}
+
+/**
+ * Whether enough audio is buffered to start playing and not stop again.
+ *
+ * The voice is slower than real time on a mid-range phone, so starting at the
+ * first sentence plays it and then waits while the next is made — the pauses
+ * people hear. At a measured rate r (seconds of audio made per second), the
+ * rest takes remaining/r to make and plays in buffered + remaining, so the
+ * reading never runs dry once buffered >= remaining × (1/r − 1).
+ */
+export function readyToPlay(
+  state: {
+    bufferedS: number;
+    producedS: number;
+    elapsedS: number;
+    remainingChars: number;
+    done: boolean;
+  },
+  knobs: typeof READ = READ
+): boolean {
+  if (state.done) return true;
+  if (state.producedS <= 0 || state.elapsedS <= 0) return false;
+  const rate = state.producedS / state.elapsedS;
+  if (rate >= 1) return true;
+  const remainingS = state.remainingChars / (knobs.CHARS_PER_S * knobs.SPEED);
+  return state.bufferedS >= remainingS * (1 / rate - 1) + knobs.LEAD_S;
+}
+
 /** A test question as it should be read aloud: the question, then each option by letter. */
 export function spokenQuestion(
   number: number,

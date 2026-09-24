@@ -5,6 +5,7 @@ import { models, useTextToSpeech } from "react-native-executorch";
 import { useConfirm } from "../components/dialog";
 import { useAI } from "./ai";
 import { forSpeech } from "./formats";
+import { READ, readyToPlay, speechGroups } from "./voice";
 
 /**
  * Kokoro's output rate. The audio context has to match it: a context at the
@@ -31,8 +32,9 @@ export type Reader = {
   /**
    * Read this aloud and resolve when it has finished, or been stopped. Never
    * asks about the download — the voice-replies switch asks once, up front.
+   * `onReveal` hears how far into `text` the voice has got, as it goes.
    */
-  say: (key: string, text: string) => Promise<void>;
+  say: (key: string, text: string, onReveal?: (upTo: number) => void) => Promise<void>;
   stop: () => void;
 };
 
@@ -65,7 +67,11 @@ export function useReader(): Reader {
 
   // What was asked for before the voice was ready. A ref, not state: nothing
   // renders from it, it only has to survive until the model finishes loading.
-  const pending = useRef<{ key: string; text: string } | null>(null);
+  const pending = useRef<{
+    key: string;
+    text: string;
+    onReveal?: (upTo: number) => void;
+  } | null>(null);
   const playback = useRef<{ context: AudioContext; queue: AudioBufferQueueSourceNode } | null>(
     null
   );
@@ -94,8 +100,18 @@ export function useReader(): Reader {
     void active.context.close();
   }, []);
 
+  /**
+   * Reads `text` a group of sentences at a time, and reports how far it has
+   * got through `onReveal` — the end of whichever group is playing — so the
+   * screen can show the words as they are said.
+   *
+   * Groups, not Kokoro's own stream: the stream hands back audio with no word
+   * of which text it covers, and the screen needs exactly that. Each group is
+   * made while the one before plays, and playback holds off until enough is
+   * buffered to finish without stopping — see readyToPlay.
+   */
   const play = useCallback(
-    async (key: string, text: string) => {
+    async (key: string, text: string, onReveal?: (upTo: number) => void) => {
       halt();
       setPreparingKey(null);
       setOwnNotice(null);
@@ -105,52 +121,88 @@ export function useReader(): Reader {
       queue.connect(context.destination);
       playback.current = { context, queue };
       setSpeaking(key);
+      // Only the reading still current may act. A stale one finishing late
+      // must not clear the button of the one that replaced it.
+      const current = (): boolean => playback.current?.queue === queue;
 
-      // Done means both halves are done: the model has written the last piece
-      // AND the speaker has played it. Either can finish first — synthesis
-      // can outrun playback, and playback can drain while the model is still
-      // on the next sentence — so each checks the other.
-      let queued = 0;
-      let written = false;
+      const groups = speechGroups(text);
+      const audios: Float32Array[] = [];
+      let queued = 0; // groups handed to the speaker
+      let played = 0; // groups it has finished
       let started = false;
+      let written = false;
+      const reveal = (index: number): void => onReveal?.(groups[index]?.end ?? text.length);
+
       const finish = (): void => {
-        // Only the reading that is still current may end itself. A stale one
-        // finishing late must not clear the button of the one that replaced it.
-        if (playback.current?.queue !== queue) return;
+        if (!current()) return;
+        onReveal?.(text.length);
         halt();
         setSpeaking(null);
         release();
       };
+      const push = (index: number): void => {
+        const audio = audios[index]!;
+        const buffer = context.createBuffer(1, audio.length, KOKORO_SAMPLE_RATE);
+        buffer.copyToChannel(audio as Float32Array<ArrayBuffer>, 0);
+        queue.enqueueBuffer(buffer);
+        queued = index + 1;
+        // The speaker is idle — just started, or ran dry — so this plays now.
+        if (played === index) reveal(index);
+      };
       queue.onBufferEnded = () => {
-        queued -= 1;
-        if (written && queued <= 0) finish();
+        played += 1;
+        if (played < queued) reveal(played);
+        else if (written && played >= groups.length) finish();
+      };
+      const start = (): void => {
+        started = true;
+        for (let index = queued; index < audios.length; index += 1) push(index);
+        // Both arguments, explicitly: start()'s default offset is -1, which its
+        // own check then rejects ("offset must be a finite non-negative
+        // number") — react-native-audio-api 0.x.
+        queue.start(0, 0);
       };
 
       try {
-        await ttsRef.current.stream({
-          text: forSpeech(text),
-          onNext: (audio) => {
-            if (playback.current?.queue !== queue) return; // stopped meanwhile
-            const buffer = context.createBuffer(1, audio.length, KOKORO_SAMPLE_RATE);
-            buffer.copyToChannel(audio as Float32Array<ArrayBuffer>, 0);
-            queue.enqueueBuffer(buffer);
-            queued += 1;
-            if (!started) {
-              started = true;
-              // Both arguments, explicitly: start()'s default offset is -1,
-              // which its own check then rejects ("offset must be a finite
-              // non-negative number") — react-native-audio-api 0.x.
-              queue.start(0, 0);
-            }
-          },
-        });
-        written = true;
-        if (queued <= 0) finish();
-      } catch (error) {
-        // A stream cut short by stop() may reject; that is not a failure to report.
-        if (playback.current?.queue === queue) {
-          setOwnNotice(error instanceof Error ? error.message : String(error));
+        const began = Date.now();
+        let produced = 0;
+        for (const [index, group] of groups.entries()) {
+          // The hook refuses a second call until it has re-rendered with
+          // isGenerating false, which lands a tick after the first resolves —
+          // and a reading replaced mid-group has to let that group finish.
+          while (ttsRef.current.isGenerating) {
+            if (!current()) return;
+            await new Promise((resolve) => setTimeout(resolve, 16));
+          }
+          if (!current()) return;
+          const made = await ttsRef.current.forward({
+            text: forSpeech(text.slice(group.start, group.end)),
+            speed: READ.SPEED,
+          });
+          if (!current()) return;
+          // A zero-length buffer is refused, and the group still has to count.
+          audios.push(made.length > 0 ? made : new Float32Array(KOKORO_SAMPLE_RATE / 100));
+          produced += audios[index]!.length / KOKORO_SAMPLE_RATE;
+
+          if (started) push(index);
+          else if (
+            readyToPlay({
+              bufferedS: produced,
+              producedS: produced,
+              elapsedS: (Date.now() - began) / 1000,
+              remainingChars: text.length - group.end,
+              done: index === groups.length - 1,
+            })
+          ) {
+            start();
+          }
         }
+        written = true;
+        if (groups.length === 0) finish();
+        else if (!started) start();
+        else if (played >= groups.length) finish();
+      } catch (error) {
+        if (current()) setOwnNotice(error instanceof Error ? error.message : String(error));
         finish();
         release();
       }
@@ -174,7 +226,7 @@ export function useReader(): Reader {
     const next = pending.current;
     if (!tts.isReady || !next) return;
     pending.current = null;
-    void play(next.key, next.text);
+    void play(next.key, next.text, next.onReveal);
   }, [tts.isReady, play]);
 
   // Written the moment the files land, as dictation does, so abandoning the
@@ -231,7 +283,7 @@ export function useReader(): Reader {
   );
 
   const say = useCallback(
-    (key: string, text: string) =>
+    (key: string, text: string, onReveal?: (upTo: number) => void) =>
       new Promise<void>((resolve) => {
         // A say() already waiting is ended, not orphaned.
         release();
@@ -243,10 +295,10 @@ export function useReader(): Reader {
         }
         settle.current = resolve;
         if (ttsRef.current.isReady) {
-          void play(key, text);
+          void play(key, text, onReveal);
           return;
         }
-        pending.current = { key, text };
+        pending.current = { key, text, onReveal };
         setPreparingKey(key);
         setArmed(true);
       }),
