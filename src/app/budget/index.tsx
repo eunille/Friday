@@ -308,7 +308,11 @@ function Budget(): JSX.Element {
       return (spent?.total ?? 0) > budget.limit;
     }).length;
     if (over > 0) {
-      return { value: `${over} over`, note: over === 1 ? "budget passed" : "budgets passed", alarm: true };
+      return {
+        value: `${over} over`,
+        note: over === 1 ? "budget passed" : "budgets passed",
+        alarm: true,
+      };
     }
     if (goals.length > 0) {
       const target = goals.reduce((sum, goal) => sum + goal.target, 0);
@@ -321,7 +325,11 @@ function Budget(): JSX.Element {
       };
     }
     if (budgets.length > 0) {
-      return { value: `${budgets.length}`, note: budgets.length === 1 ? "budget set" : "budgets set", alarm: false };
+      return {
+        value: `${budgets.length}`,
+        note: budgets.length === 1 ? "budget set" : "budgets set",
+        alarm: false,
+      };
     }
     return { value: "—", note: "no budget or goal yet", alarm: false };
   }, [budgets, goals, txns, month]);
@@ -483,359 +491,369 @@ function Budget(): JSX.Element {
             rather than going through Screen, so it asks for it. */}
         {stagger(
           <>
-        {/* The one saturated surface in the app. Money is the subject of this
+            {/* The one saturated surface in the app. Money is the subject of this
             screen, so the headline carries the colour and everything below it
             stays quiet — one bold thing reads as emphasis, six read as noise. */}
-        {/* No padding on the card itself. An absolutely-positioned child takes
+            {/* No padding on the card itself. An absolutely-positioned child takes
             its width from the parent's border box but its height from the
             content box, so a padded card left the wash 32dp short at the
             bottom — the seam that read as the card being half-transparent.
             With the padding on an inner View the two boxes are the same and
             there is nothing left to disagree about. */}
-        <View
-          className="overflow-hidden rounded-[22px]"
-          style={{ backgroundColor: palette.money }}
-        >
-          <BrandSurface colour={palette.money} radius={22} />
-          <View className="gap-3 p-4">
-          <View className="flex-row items-center gap-3">
-            {/* The one place in Money with a face. It is also the fastest way
+            <View
+              className="overflow-hidden rounded-[22px]"
+              style={{ backgroundColor: palette.money }}
+            >
+              <BrandSurface colour={palette.money} radius={22} />
+              <View className="gap-3 p-4">
+                <View className="flex-row items-center gap-3">
+                  {/* The one place in Money with a face. It is also the fastest way
                 to tell this screen from every other balance in the app. */}
-            <Mascot pose="rich" size={54} />
-            <View className="flex-1">
-            <View className="flex-row items-center gap-2">
-              <Text
-                style={{
-                  color: palette.moneyForeground,
-                  opacity: 0.75,
-                  fontFamily: "Archivo_500Medium",
-                  fontSize: 12,
-                }}
-              >
-                Net worth
-              </Text>
-              {/* Computed from the ledger, not a stored snapshot — see
+                  <Mascot pose="rich" size={54} />
+                  <View className="flex-1">
+                    <View className="flex-row items-center gap-2">
+                      <Text
+                        style={{
+                          color: palette.moneyForeground,
+                          opacity: 0.75,
+                          fontFamily: "Archivo_500Medium",
+                          fontSize: 12,
+                        }}
+                      >
+                        Net worth
+                      </Text>
+                      {/* Computed from the ledger, not a stored snapshot — see
                   netWorthAt. Absent entirely until there is a month to compare
                   against, rather than claiming a confident 0%. */}
-              {moved !== null && moved.delta !== 0 && (
-                <View
-                  className="flex-row items-center gap-0.5 rounded-full px-1.5 py-0.5"
-                  style={{ backgroundColor: "rgba(255,255,255,0.18)" }}
-                >
-                  <Ionicons
-                    name={moved.delta > 0 ? "arrow-up" : "arrow-down"}
-                    size={9.5}
-                    color={palette.moneyForeground}
-                  />
-                  <Text
-                    style={{
-                      color: palette.moneyForeground,
-                      fontFamily: "Archivo_600SemiBold",
-                      fontSize: 10,
-                    }}
-                  >
-                    {moved.share === null
-                      ? peso(Math.abs(moved.delta))
-                      : `${Math.abs(moved.share * 100).toFixed(1)}%`}
-                  </Text>
+                      {moved !== null && moved.delta !== 0 && (
+                        <View
+                          className="flex-row items-center gap-0.5 rounded-full px-1.5 py-0.5"
+                          style={{ backgroundColor: "rgba(255,255,255,0.18)" }}
+                        >
+                          <Ionicons
+                            name={moved.delta > 0 ? "arrow-up" : "arrow-down"}
+                            size={9.5}
+                            color={palette.moneyForeground}
+                          />
+                          <Text
+                            style={{
+                              color: palette.moneyForeground,
+                              fontFamily: "Archivo_600SemiBold",
+                              fontSize: 10,
+                            }}
+                          >
+                            {moved.share === null
+                              ? peso(Math.abs(moved.delta))
+                              : `${Math.abs(moved.share * 100).toFixed(1)}%`}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text
+                      style={{
+                        color: palette.moneyForeground,
+                        fontFamily: "Archivo_600SemiBold",
+                        fontSize: 34,
+                        letterSpacing: -0.5,
+                      }}
+                    >
+                      {peso(worth)}
+                    </Text>
+                  </View>
                 </View>
-              )}
-            </View>
-            <Text
-              style={{
-                color: palette.moneyForeground,
-                fontFamily: "Archivo_600SemiBold",
-                fontSize: 34,
-                letterSpacing: -0.5,
-              }}
-            >
-              {peso(worth)}
-            </Text>
-            </View>
-          </View>
-          <View className="flex-row flex-wrap gap-x-5 gap-y-1">
-            {/* Only worth spelling out when a card makes them differ from the
+                <View className="flex-row flex-wrap gap-x-5 gap-y-1">
+                  {/* Only worth spelling out when a card makes them differ from the
                 headline. With no card, held is the headline again. */}
-            {owed > 0 && (
-              <>
-                <HeroStat
-                  icon="wallet"
-                  label="held"
-                  value={held}
-                  colour={palette.moneyForeground}
-                />
-                <HeroStat icon="card" label="owed" value={owed} colour={palette.moneyForeground} />
-              </>
-            )}
-            <HeroStat
-              icon="arrow-down"
-              label="in this month"
-              value={totals.income}
-              colour={palette.moneyForeground}
-            />
-            <HeroStat
-              icon="arrow-up"
-              label="out this month"
-              value={totals.expense}
-              colour={palette.moneyForeground}
-            />
-          </View>
-          </View>
-        </View>
+                  {owed > 0 && (
+                    <>
+                      <HeroStat
+                        icon="wallet"
+                        label="held"
+                        value={held}
+                        colour={palette.moneyForeground}
+                      />
+                      <HeroStat
+                        icon="card"
+                        label="owed"
+                        value={owed}
+                        colour={palette.moneyForeground}
+                      />
+                    </>
+                  )}
+                  <HeroStat
+                    icon="arrow-down"
+                    label="in this month"
+                    value={totals.income}
+                    colour={palette.moneyForeground}
+                  />
+                  <HeroStat
+                    icon="arrow-up"
+                    label="out this month"
+                    value={totals.expense}
+                    colour={palette.moneyForeground}
+                  />
+                </View>
+              </View>
+            </View>
 
-        {/* Two figures that answer "what is already spoken for" and "am I on
+            {/* Two figures that answer "what is already spoken for" and "am I on
             track" — the pair of questions a balance on its own cannot. Both
             open what they summarise rather than leading to a page of their
             own. */}
-        <View className="flex-row gap-2.5">
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`What repeats, ${peso(repeat.outgoing)} a month`}
-            onPress={() => setRepeatsOpen(true)}
-            className="flex-1 gap-1.5 rounded-2xl border border-border bg-surface p-3.5 active:bg-surface-tertiary"
-          >
-            <View className="flex-row items-center gap-1.5">
-              <View
-                className="h-7 w-7 items-center justify-center rounded-lg"
-                style={{ backgroundColor: `${palette.warning}22` }}
-              >
-                <Ionicons name="repeat" size={15} color={palette.warning} />
-              </View>
-            </View>
-            <Text
-              style={{
-                color: palette.foreground,
-                fontFamily: "Archivo_600SemiBold",
-                fontSize: 19,
-                letterSpacing: -0.3,
-              }}
-            >
-              {peso(repeat.outgoing)}
-            </Text>
-            <Text style={{ color: palette.muted, fontFamily: "Archivo_400Regular", fontSize: 11.5 }}>
-              {rules.length === 0 ? "nothing repeats yet" : "repeats a month"}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Budgets and goals, ${plan.value} ${plan.note}`}
-            onPress={() => setTab("plan")}
-            className="flex-1 gap-1.5 rounded-2xl border border-border bg-surface p-3.5 active:bg-surface-tertiary"
-          >
-            <View
-              className="h-7 w-7 items-center justify-center rounded-lg"
-              style={{ backgroundColor: `${palette.plan}22` }}
-            >
-              <Ionicons name="flag" size={15} color={palette.plan} />
-            </View>
-            <Text
-              style={{
-                color: plan.alarm ? palette.danger : palette.foreground,
-                fontFamily: "Archivo_600SemiBold",
-                fontSize: 19,
-                letterSpacing: -0.3,
-              }}
-            >
-              {plan.value}
-            </Text>
-            <Text style={{ color: palette.muted, fontFamily: "Archivo_400Regular", fontSize: 11.5 }}>
-              {plan.note}
-            </Text>
-          </Pressable>
-        </View>
-
-        {/* A segmented control, not navigation. Everything below swaps; the
-            balance, the two figures and the header stay put, so you never lose
-            your place to look at something else on the same screen. */}
-        <View className="flex-row gap-1 rounded-full border border-border bg-surface p-1">
-          {TABS.map((option) => {
-            const on = tab === option.key;
-            return (
+            <View className="flex-row gap-2.5">
               <Pressable
-                key={option.key}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: on }}
-                onPress={() => setTab(option.key)}
-                className="min-h-[36px] flex-1 items-center justify-center rounded-full"
-                style={{ backgroundColor: on ? palette.accent : "transparent" }}
+                accessibilityRole="button"
+                accessibilityLabel={`What repeats, ${peso(repeat.outgoing)} a month`}
+                onPress={() => setRepeatsOpen(true)}
+                className="flex-1 gap-1.5 rounded-2xl border border-border bg-surface p-3.5 active:bg-surface-tertiary"
               >
+                <View className="flex-row items-center gap-1.5">
+                  <View
+                    className="h-7 w-7 items-center justify-center rounded-lg"
+                    style={{ backgroundColor: `${palette.warning}22` }}
+                  >
+                    <Ionicons name="repeat" size={15} color={palette.warning} />
+                  </View>
+                </View>
                 <Text
                   style={{
+                    color: palette.foreground,
                     fontFamily: "Archivo_600SemiBold",
-                    fontSize: 12.5,
-                    color: on ? palette.accentForeground : palette.muted,
+                    fontSize: 19,
+                    letterSpacing: -0.3,
                   }}
                 >
-                  {option.label}
+                  {peso(repeat.outgoing)}
+                </Text>
+                <Text
+                  style={{ color: palette.muted, fontFamily: "Archivo_400Regular", fontSize: 11.5 }}
+                >
+                  {rules.length === 0 ? "nothing repeats yet" : "repeats a month"}
                 </Text>
               </Pressable>
-            );
-          })}
-        </View>
 
-        {/* A View, not a fragment. The page's gap-4 only separates the
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Budgets and goals, ${plan.value} ${plan.note}`}
+                onPress={() => setTab("plan")}
+                className="flex-1 gap-1.5 rounded-2xl border border-border bg-surface p-3.5 active:bg-surface-tertiary"
+              >
+                <View
+                  className="h-7 w-7 items-center justify-center rounded-lg"
+                  style={{ backgroundColor: `${palette.plan}22` }}
+                >
+                  <Ionicons name="flag" size={15} color={palette.plan} />
+                </View>
+                <Text
+                  style={{
+                    color: plan.alarm ? palette.danger : palette.foreground,
+                    fontFamily: "Archivo_600SemiBold",
+                    fontSize: 19,
+                    letterSpacing: -0.3,
+                  }}
+                >
+                  {plan.value}
+                </Text>
+                <Text
+                  style={{ color: palette.muted, fontFamily: "Archivo_400Regular", fontSize: 11.5 }}
+                >
+                  {plan.note}
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* A segmented control, not navigation. Everything below swaps; the
+            balance, the two figures and the header stay put, so you never lose
+            your place to look at something else on the same screen. */}
+            <View className="flex-row gap-1 rounded-full border border-border bg-surface p-1">
+              {TABS.map((option) => {
+                const on = tab === option.key;
+                return (
+                  <Pressable
+                    key={option.key}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: on }}
+                    onPress={() => setTab(option.key)}
+                    className="min-h-[36px] flex-1 items-center justify-center rounded-full"
+                    style={{ backgroundColor: on ? palette.accent : "transparent" }}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: "Archivo_600SemiBold",
+                        fontSize: 12.5,
+                        color: on ? palette.accentForeground : palette.muted,
+                      }}
+                    >
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {/* A View, not a fragment. The page's gap-4 only separates the
             ScrollView's own children, and a tab's whole contents arrive as one
             of them — so inside here the rhythm was zero and the filter chips
             ended up wedged against the card above and the list below. The
             wrapper gives the tab its own copy of the page rhythm. */}
-        {tab === "wallets" && (
-          <View className="gap-4">
-            {/* Which band to show, in place. With four bands and nine kinds a
+            {tab === "wallets" && (
+              <View className="gap-4">
+                {/* Which band to show, in place. With four bands and nine kinds a
                 filter earns its row; with one band it would be a control that
                 can only ever do nothing, so it waits. */}
-            {bands.length > 1 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} className="-mx-4">
-                <View className="flex-row gap-2 px-4">
-                  {[ALL_GROUPS, ...bands.map((band) => band.name)].map((name) => (
-                    <Chip
-                      key={name}
-                      label={name}
-                      on={group === name}
-                      onPress={() => setGroup(name)}
-                    />
-                  ))}
-                </View>
-              </ScrollView>
-            )}
-
-            {live.length === 0 ? (
-              <Typography.Paragraph className="pt-2 text-center font-read text-muted text-[15px] leading-6">
-                No wallets yet — every transaction has to come out of somewhere.
-              </Typography.Paragraph>
-            ) : (
-              shownBands.map((band) => (
-                <View key={band.name} className="gap-2">
-                  <View className="flex-row items-center justify-between">
-                    <Typography.Heading type="h3" className="font-ui-bold text-[14px]">
-                      {band.name}
-                    </Typography.Heading>
-                    <Typography.Paragraph className="font-ui-medium text-muted text-[12px]">
-                      {peso(band.total)}
-                    </Typography.Paragraph>
-                  </View>
-                  {/* Two to a row, padded with a spacer so an odd one out stays
-                      half-width instead of stretching across. */}
-                  {Array.from({ length: Math.ceil(band.wallets.length / 2) }, (_, row) => (
-                    <View key={row} className="flex-row gap-2.5">
-                      {band.wallets.slice(row * 2, row * 2 + 2).map((account) => (
-                        <WalletCard
-                          key={account.id}
-                          account={account}
-                          balance={balanceOf(account, txns)}
-                          grow
-                          onPress={() =>
-                            router.push({
-                              pathname: "/budget/wallet/[id]",
-                              params: { id: account.id },
-                            })
-                          }
+                {bands.length > 1 && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} className="-mx-4">
+                    <View className="flex-row gap-2 px-4">
+                      {[ALL_GROUPS, ...bands.map((band) => band.name)].map((name) => (
+                        <Chip
+                          key={name}
+                          label={name}
+                          on={group === name}
+                          onPress={() => setGroup(name)}
                         />
                       ))}
-                      {band.wallets.slice(row * 2, row * 2 + 2).length === 1 && (
-                        <View className="flex-1" />
-                      )}
                     </View>
-                  ))}
-                </View>
-              ))
+                  </ScrollView>
+                )}
+
+                {live.length === 0 ? (
+                  <Typography.Paragraph className="pt-2 text-center font-read text-muted text-[15px] leading-6">
+                    No wallets yet — every transaction has to come out of somewhere.
+                  </Typography.Paragraph>
+                ) : (
+                  shownBands.map((band) => (
+                    <View key={band.name} className="gap-2">
+                      <View className="flex-row items-center justify-between">
+                        <Typography.Heading type="h3" className="font-ui-bold text-[14px]">
+                          {band.name}
+                        </Typography.Heading>
+                        <Typography.Paragraph className="font-ui-medium text-muted text-[12px]">
+                          {peso(band.total)}
+                        </Typography.Paragraph>
+                      </View>
+                      {/* Two to a row, padded with a spacer so an odd one out stays
+                      half-width instead of stretching across. */}
+                      {Array.from({ length: Math.ceil(band.wallets.length / 2) }, (_, row) => (
+                        <View key={row} className="flex-row gap-2.5">
+                          {band.wallets.slice(row * 2, row * 2 + 2).map((account) => (
+                            <WalletCard
+                              key={account.id}
+                              account={account}
+                              balance={balanceOf(account, txns)}
+                              grow
+                              onPress={() =>
+                                router.push({
+                                  pathname: "/budget/wallet/[id]",
+                                  params: { id: account.id },
+                                })
+                              }
+                            />
+                          ))}
+                          {band.wallets.slice(row * 2, row * 2 + 2).length === 1 && (
+                            <View className="flex-1" />
+                          )}
+                        </View>
+                      ))}
+                    </View>
+                  ))
+                )}
+
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Add a wallet"
+                  onPress={startWallet}
+                  className="min-h-[48px] flex-row items-center justify-center gap-2 rounded-2xl border border-border border-dashed active:bg-surface-tertiary"
+                >
+                  <Ionicons name="add" size={18} color={palette.muted} />
+                  <Text
+                    style={{ fontFamily: "Archivo_500Medium", fontSize: 13, color: palette.muted }}
+                  >
+                    Add a wallet
+                  </Text>
+                </Pressable>
+              </View>
             )}
 
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Add a wallet"
-              onPress={startWallet}
-              className="min-h-[48px] flex-row items-center justify-center gap-2 rounded-2xl border border-border border-dashed active:bg-surface-tertiary"
-            >
-              <Ionicons name="add" size={18} color={palette.muted} />
-              <Text style={{ fontFamily: "Archivo_500Medium", fontSize: 13, color: palette.muted }}>
-                Add a wallet
-              </Text>
-            </Pressable>
-          </View>
-        )}
-
-        {tab === "activity" && (
-          <View className="gap-4">
-            {/* The shape of the month, in place rather than one tap away. */}
-            {txns.length > 0 && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Open full charts"
-                onPress={() => router.push("/budget/charts")}
-                className="gap-3 rounded-2xl border border-border bg-surface p-3.5 active:opacity-80"
-              >
-                <View className="flex-row items-center justify-between">
-                  {/* Names what is actually drawn. The bars wait for a second
+            {tab === "activity" && (
+              <View className="gap-4">
+                {/* The shape of the month, in place rather than one tap away. */}
+                {txns.length > 0 && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Open full charts"
+                    onPress={() => router.push("/budget/charts")}
+                    className="gap-3 rounded-2xl border border-border bg-surface p-3.5 active:opacity-80"
+                  >
+                    <View className="flex-row items-center justify-between">
+                      {/* Names what is actually drawn. The bars wait for a second
                       month, so a fixed "Six months" would be a heading over
                       something else. */}
-                  <Typography.Paragraph className="font-ui-bold text-[14px]">
-                    {active >= 2 ? "Six months" : "Where it went"}
-                  </Typography.Paragraph>
-                  <View className="flex-row items-center gap-1">
-                    <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
-                      All charts
-                    </Typography.Paragraph>
-                    <Ionicons name="chevron-forward" size={13} color={palette.muted} />
-                  </View>
-                </View>
-                {/* A run of six bars where five are empty reads as a broken
+                      <Typography.Paragraph className="font-ui-bold text-[14px]">
+                        {active >= 2 ? "Six months" : "Where it went"}
+                      </Typography.Paragraph>
+                      <View className="flex-row items-center gap-1">
+                        <Typography.Paragraph className="font-ui text-muted text-[11.5px]">
+                          All charts
+                        </Typography.Paragraph>
+                        <Ionicons name="chevron-forward" size={13} color={palette.muted} />
+                      </View>
+                    </View>
+                    {/* A run of six bars where five are empty reads as a broken
                     chart rather than a new ledger, so it waits until there is a
                     shape to show. The split below works from one month. */}
-                {active >= 2 && <SixMonths txns={txns} month={month} />}
-                <Split txns={txns} month={month} />
-              </Pressable>
-            )}
+                    {active >= 2 && <SixMonths txns={txns} month={month} />}
+                    <Split txns={txns} month={month} />
+                  </Pressable>
+                )}
 
-            {/* Scrolls, like the band filter above it. The four of them come
+                {/* Scrolls, like the band filter above it. The four of them come
                 to 299dp, which fits a 360dp phone and not a 320dp one — and a
                 chip that is off the edge with nothing to drag is a filter
                 nobody can reach. */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="-mx-4">
-              <View className="flex-row gap-2 px-4">
-                {FILTERS.map((option) => (
-                  <Chip
-                    key={option.key}
-                    label={option.label}
-                    on={filter === option.key}
-                    onPress={() => setFilter(option.key)}
-                  />
-                ))}
-              </View>
-            </ScrollView>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="-mx-4">
+                  <View className="flex-row gap-2 px-4">
+                    {FILTERS.map((option) => (
+                      <Chip
+                        key={option.key}
+                        label={option.label}
+                        on={filter === option.key}
+                        onPress={() => setFilter(option.key)}
+                      />
+                    ))}
+                  </View>
+                </ScrollView>
 
-            {shown.length === 0 ? (
-              <Typography.Paragraph className="pt-4 text-center font-read text-muted text-[15px] leading-6">
-                {live.length === 0
-                  ? "Add a wallet first — every transaction has to come out of somewhere."
-                  : "Nothing logged yet. Open Budget and say what you spent — “250 lunch gcash” is enough."}
-              </Typography.Paragraph>
-            ) : (
-              <View className="overflow-hidden rounded-2xl border border-border bg-surface">
-                {shown.map((txn, index) => (
-                  <TxnRow
-                    key={txn.id}
-                    txn={txn}
-                    accounts={accounts}
-                    first={index === 0}
-                    onPress={() => setDraft(txn)}
-                  />
-                ))}
+                {shown.length === 0 ? (
+                  <Typography.Paragraph className="pt-4 text-center font-read text-muted text-[15px] leading-6">
+                    {live.length === 0
+                      ? "Add a wallet first — every transaction has to come out of somewhere."
+                      : "Nothing logged yet. Open Budget and say what you spent — “250 lunch gcash” is enough."}
+                  </Typography.Paragraph>
+                ) : (
+                  <View className="overflow-hidden rounded-2xl border border-border bg-surface">
+                    {shown.map((txn, index) => (
+                      <TxnRow
+                        key={txn.id}
+                        txn={txn}
+                        accounts={accounts}
+                        first={index === 0}
+                        onPress={() => setDraft(txn)}
+                      />
+                    ))}
+                  </View>
+                )}
               </View>
             )}
-          </View>
-        )}
 
-        {tab === "plan" && (
-          <PlanPanel
-            txns={txns}
-            goals={goals}
-            budgets={budgets}
-            month={month}
-            onChanged={refresh}
-          />
-        )}
-
+            {tab === "plan" && (
+              <PlanPanel
+                txns={txns}
+                goals={goals}
+                budgets={budgets}
+                month={month}
+                onChanged={refresh}
+              />
+            )}
           </>
         )}
       </ScrollView>

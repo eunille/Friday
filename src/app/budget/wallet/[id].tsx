@@ -190,35 +190,35 @@ function Wallet(): JSX.Element {
         >
           <BrandSurface colour={brand.colour} radius={22} />
           <View className="gap-3 p-4">
-          <View className="flex-row items-center gap-2.5">
-            <BrandMark type={account.type} size={34} />
-            <Text
-              style={{
-                color: "#fff",
-                opacity: 0.85,
-                fontFamily: "Archivo_500Medium",
-                fontSize: 12.5,
-              }}
-            >
-              {brand.label}
-            </Text>
-          </View>
-          <View>
-            <Text
-              style={{
-                color: "#fff",
-                fontFamily: "Archivo_600SemiBold",
-                fontSize: 34,
-                letterSpacing: -0.5,
-              }}
-            >
-              {peso(balance)}
-            </Text>
-          </View>
-          <View className="flex-row flex-wrap gap-x-5 gap-y-1">
-            <Flow icon="arrow-down" label="in this month" value={flow.inward} />
-            <Flow icon="arrow-up" label="out this month" value={flow.outward} />
-          </View>
+            <View className="flex-row items-center gap-2.5">
+              <BrandMark type={account.type} size={34} />
+              <Text
+                style={{
+                  color: "#fff",
+                  opacity: 0.85,
+                  fontFamily: "Archivo_500Medium",
+                  fontSize: 12.5,
+                }}
+              >
+                {brand.label}
+              </Text>
+            </View>
+            <View>
+              <Text
+                style={{
+                  color: "#fff",
+                  fontFamily: "Archivo_600SemiBold",
+                  fontSize: 34,
+                  letterSpacing: -0.5,
+                }}
+              >
+                {peso(balance)}
+              </Text>
+            </View>
+            <View className="flex-row flex-wrap gap-x-5 gap-y-1">
+              <Flow icon="arrow-down" label="in this month" value={flow.inward} />
+              <Flow icon="arrow-up" label="out this month" value={flow.outward} />
+            </View>
           </View>
         </View>
 

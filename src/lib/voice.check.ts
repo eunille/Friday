@@ -24,7 +24,12 @@ picks("see", 2);
 picks("A", 0);
 
 // By the option's own words.
-const tcp = ["Ordered, reliable delivery", "Encryption of every packet", "Faster name lookup", "Compression"];
+const tcp = [
+  "Ordered, reliable delivery",
+  "Encryption of every packet",
+  "Faster name lookup",
+  "Compression",
+];
 assert.equal(spokenChoice("reliable delivery", tcp), 0);
 assert.equal(spokenChoice("I'd say encryption of every packet", tcp), 1);
 
@@ -34,7 +39,11 @@ assert.equal(spokenChoice("", options), -1);
 assert.equal(spokenChoice("hmm let me think", options), -1);
 assert.equal(spokenChoice("packet", tcp), -1, "one word of a long option is not a pick");
 assert.equal(spokenChoice("D", ["True", "False"]), -1, "a letter past the end is not a pick");
-assert.equal(spokenChoice("two plus three", options), -1, "two options fully said is a tie, not a pick");
+assert.equal(
+  spokenChoice("two plus three", options),
+  -1,
+  "two options fully said is a tie, not a pick"
+);
 
 assert.equal(
   spokenQuestion(1, 5, "What does TCP guarantee?", ["Delivery", "Speed"]),
