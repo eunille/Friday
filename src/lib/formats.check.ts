@@ -20,6 +20,7 @@ import {
   preview,
   readingOrder,
   relativeDate,
+  repeatTail,
   trimToSentence,
 } from "./formats.ts";
 
@@ -269,5 +270,26 @@ assert.deepEqual(
   "counted, unfiled notes skipped, A to Z ignoring case"
 );
 assert.deepEqual(subjectsOf([]), []);
+
+// A reply going round in circles is cut where the circling starts, so what
+// is left ends on the last new sentence.
+{
+  const once = "Sodium is high. Eat it rarely. Pair it with vegetables.";
+  const looping = `${once} Sodium is high. Eat it rarely. Pair it with vegetables.`;
+  const tail = repeatTail(looping);
+  assert.equal(tail?.looped, true);
+  assert.equal(looping.slice(0, tail?.from), once);
+
+  // New text: nothing to hold.
+  assert.equal(repeatTail(once), null);
+  assert.equal(repeatTail(`${once} Then`), null);
+  // One honest repeat is held, not cut, and new text after it releases it.
+  assert.deepEqual(repeatTail(`${once} Sodium is high.`), { from: once.length, looped: false });
+  assert.equal(repeatTail(`${once} Sodium is high. Fibre is good.`), null);
+  // A sentence still being written that matches an earlier one is held.
+  assert.deepEqual(repeatTail(`${once} Sodium is h`), { from: once.length, looped: false });
+  // Short lines ("1.", "Yes.") never make a loop on their own.
+  assert.equal(repeatTail("1. Yes. 2. Yes. 3. Yes. 4. Yes."), null);
+}
 
 console.log("formats: all checks passed");

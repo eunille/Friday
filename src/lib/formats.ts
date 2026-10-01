@@ -355,6 +355,58 @@ export function trimToSentence(text: string): string {
   return trimmed;
 }
 
+/** Finished sentences in a row, each one said before, that make a loop. */
+const LOOP_SENTENCES = 3;
+/** Shorter than this ("Yes.", "1.") repeats for honest reasons, so it never counts. */
+const LOOP_MIN = 8;
+
+const sentenceKey = (sentence: string): string =>
+  sentence
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+/**
+ * Where a reply has started repeating itself.
+ *
+ * A small model that loses the thread says the same sentences again and never
+ * stops. `looped` means the reply ends in LOOP_SENTENCES finished sentences
+ * that were each said earlier: cut it at `from`. Without `looped`, `from` is
+ * where a repeat *may* be starting (a repeated sentence or two, or one still
+ * being written that so far matches an earlier one), so a stream can hold it
+ * back until it knows. Null when the end of the reply is new.
+ *
+ * One repeated line is allowed: "Drink water." under two age groups is fine.
+ * A run of three is the model going round in circles.
+ */
+export function repeatTail(text: string): { from: number; looped: boolean } | null {
+  const seen: string[] = [];
+  let from: number | null = null;
+  let repeats = 0;
+
+  for (const part of text.matchAll(/[^.!?\n]+(?:[.!?\n]+|$)/g)) {
+    const key = sentenceKey(part[0]);
+    const finished = /[.!?\n]$/.test(part[0]);
+    if (!finished) {
+      // The sentence still being written. Matching the start of an earlier
+      // one is enough to hold it; anything else is new text.
+      if (key && seen.some((said) => said.startsWith(key))) from ??= part.index;
+      else if (key) from = null;
+      break;
+    }
+    if (key.length < LOOP_MIN) continue;
+    if (seen.includes(key)) {
+      from ??= part.index;
+      repeats += 1;
+    } else {
+      seen.push(key);
+      from = null;
+      repeats = 0;
+    }
+  }
+  return from === null ? null : { from, looped: repeats >= LOOP_SENTENCES };
+}
+
 /**
  * The subject a typed name means: an existing one if it matches ignoring case
  * and spacing, otherwise the typed name tidied — or null for nothing at all.

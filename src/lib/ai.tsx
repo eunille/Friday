@@ -15,12 +15,17 @@ import {
   type ReactNode,
 } from "react";
 import { View } from "react-native";
-import { initExecutorch, models } from "react-native-executorch";
+import {
+  initExecutorch,
+  models,
+  type GenerationConfig,
+  type LLMModule,
+} from "react-native-executorch";
 import { ExpoResourceFetcher } from "react-native-executorch-expo-resource-fetcher";
-import { RAG, uuidv4 } from "react-native-rag";
+import { RAG, uuidv4, type Message } from "react-native-rag";
 
 import { MascotCooking, MascotFocused, useCookingWord } from "../components/cooking";
-import { joinChunks } from "./formats";
+import { joinChunks, repeatTail } from "./formats";
 import { createLedgerTables } from "./ledger";
 import { recover } from "./recovery";
 import { usePalette } from "./theme";
@@ -296,6 +301,72 @@ export function systemPrompt(settings: AISettings): string {
     .join(" ");
 }
 
+/**
+ * Qwen2.5's own recommended sampling. The registry entries carry none, and the
+ * RAG wrapper forwards none, so without this the model ran on the native
+ * defaults with no repetition penalty at all, and that is how a 0.5B reply
+ * ends up saying the same thing forever. A model whose registry entry does
+ * carry settings (Gemma, LFM) keeps its own, with the penalty added.
+ */
+const SAMPLING: GenerationConfig = { temperature: 0.7, topP: 0.8, repetitionPenalty: 1.05 };
+
+/**
+ * The model, steadied. Every generation in the app goes through here: the
+ * chat, Teach and Test, quizzes, summaries, the scanner, the budget coach.
+ * So this is where a reply that starts going round in circles gets stopped,
+ * not in each of those.
+ *
+ * Text that might be the start of a loop is held back rather than shown (see
+ * repeatTail), so a stopped loop never flashes its repeats on screen. A
+ * screen's own token count runs a little low while text is held; nothing uses
+ * it for more than a length cap.
+ */
+class SteadyLLM extends ExecuTorchLLM {
+  private sampling: GenerationConfig;
+
+  constructor(params: ConstructorParameters<typeof ExecuTorchLLM>[0], sampling: GenerationConfig) {
+    super(params);
+    this.sampling = sampling;
+  }
+
+  override async load(): Promise<this> {
+    await super.load();
+    // ponytail: the wrapper keeps its module private and has no sampling option.
+    // Reached into here, and checked on each upgrade of @react-native-rag/executorch.
+    // Optional, because the browser preview's stub has no module at all.
+    (this as unknown as { module?: LLMModule }).module?.configure({
+      generationConfig: this.sampling,
+    });
+    return this;
+  }
+
+  override async generate(messages: Message[], callback: (token: string) => void): Promise<string> {
+    let text = "";
+    let shown = 0;
+    let looped = false;
+    await super.generate(messages, (token) => {
+      if (looped) return;
+      text += token;
+      const tail = repeatTail(text);
+      if (tail?.looped) {
+        looped = true;
+        text = text.slice(0, tail.from);
+        void this.interrupt();
+        return;
+      }
+      const upTo = tail ? tail.from : text.length;
+      if (upTo > shown) {
+        callback(text.slice(shown, upTo));
+        shown = upTo;
+      }
+    });
+    // Held text that turned out not to be a loop: a reply may end on one
+    // honest repeat.
+    if (text.length > shown) callback(text.slice(shown));
+    return text;
+  }
+}
+
 /** The three files a tier downloads, for progress and for cancelling. */
 function tierSources(tier: Tier): unknown[] {
   const { modelSource, tokenizerSource, tokenizerConfigSource } = TIERS[tier].model();
@@ -552,13 +623,21 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
       void store.db.execute("DELETE FROM settings WHERE key = ?", [LOADING]);
     };
 
-    const llm = new ExecuTorchLLM({
-      ...TIERS[tier].model(),
-      onDownloadProgress: (progress) => {
-        if (!cancelled) setDownload({ of: tier, progress });
-        if (progress >= 1) mark();
+    const source = TIERS[tier].model();
+    const llm = new SteadyLLM(
+      {
+        ...source,
+        onDownloadProgress: (progress) => {
+          if (!cancelled) setDownload({ of: tier, progress });
+          if (progress >= 1) mark();
+        },
       },
-    });
+      {
+        ...SAMPLING,
+        ...(source as { generationConfig?: GenerationConfig }).generationConfig,
+        repetitionPenalty: SAMPLING.repetitionPenalty,
+      }
+    );
 
     // Already on disk, so this load is only into memory.
     if (fetchedRef.current.has(tier)) mark();
