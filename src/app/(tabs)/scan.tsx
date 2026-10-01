@@ -3,7 +3,7 @@ import * as ImagePicker from "expo-image-picker";
 import { Typography } from "heroui-native";
 import { OCR_ENGLISH, useOCR } from "react-native-executorch";
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
-import { Image, Pressable, TextInput, View } from "react-native";
+import { Image, Pressable, Text, TextInput, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 
 import { MascotFocused, useScanningWord } from "../../components/cooking";
@@ -15,6 +15,7 @@ import {
   EXTRACTION_PROMPT,
   REFERENCE_LABEL,
   dailyLimits,
+  everyAge,
   guidanceFor,
   isEmpty,
   parsePanel,
@@ -177,7 +178,6 @@ export default function Scan(): JSX.Element {
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [text, setText] = useState("");
   const [age, setAge] = useState<Age>("adult");
-  const [words, setWords] = useState("");
   const [saved, setSaved] = useState(false);
   const [editing, setEditing] = useState(false);
 
@@ -223,7 +223,6 @@ export default function Scan(): JSX.Element {
 
     if (result.canceled || !result.assets[0]) return;
     setText("");
-    setWords("");
     setSaved(false);
     setArmed(true);
     setPhase({ kind: "reading", image: result.assets[0].uri });
@@ -269,7 +268,6 @@ export default function Scan(): JSX.Element {
   const score = useCallback(
     (image: string) => {
       const panel = readPanel(text);
-      setWords("");
       setPhase(isEmpty(panel) ? { kind: "unreadable", image } : { kind: "scored", image, panel });
     },
     [text]
@@ -284,7 +282,6 @@ export default function Scan(): JSX.Element {
     async (image: string) => {
       if (!rag) return;
       setPhase({ kind: "scoring", image });
-      setWords("");
 
       let out = "";
       try {
@@ -341,61 +338,13 @@ export default function Scan(): JSX.Element {
   }, [text]);
 
   /**
-   * A short plain-language reading. Separate call, so the score never waits on
-   * prose, and the guidance card above is already answering the question if
-   * this never finishes.
-   *
-   * The model is handed the arithmetic rather than asked to do it: every share
-   * and every daily limit below came out of nutrition.ts against the same
-   * reference the score used. Its job is to say what that means for this age
-   * in a sentence or two, not to work out whether 1,000 mg is a lot.
+   * What the serving means for every age, shown with the score. This used to
+   * be a model paragraph behind an Explain button, one age at a time. It only
+   * ever reworded the arithmetic below, slowly, and a 0.5B model would now and
+   * then repeat itself without stopping.
    */
-  const explain = useCallback(async () => {
-    if (!rag || !assessment || !guidance || phase.kind !== "scored") return;
-    setWords("");
-    let out = "";
+  const ages = useMemo(() => (phase.kind === "scored" ? everyAge(phase.panel) : null), [phase]);
 
-    const limits = dailyLimits(age);
-    const summary = assessment.rows
-      .map(
-        (row) =>
-          `${row.label}: ${row.amount}, which is ${Math.round(row.share * 100)}% of the ${Math.round(limits[row.key]).toLocaleString("en-US")} ${UNITS[row.key]} a ${AGES[age].label.toLowerCase()} is referenced against for a day (${row.word})`
-      )
-      .join("; ");
-
-    try {
-      await rag.generate({
-        input: [
-          {
-            role: "system",
-            content:
-              `You are helping someone read a food label for a ${AGES[age].label.toLowerCase()} aged ${AGES[age].note}. ` +
-              "Every percentage and limit you are given comes from the WHO general reference, already scaled to that age. " +
-              "Write two or three short sentences: what the biggest figure means for a person of that age across a day, " +
-              "and one practical thing to do about it, such as a portion size, how often, or what to pair it with. " +
-              "Use only the numbers given. Never invent a figure, never contradict them, never diagnose, " +
-              "and never tell anyone to eliminate a food for medical reasons.",
-          },
-          {
-            role: "user",
-            content:
-              `One serving contains — ${summary}. ` +
-              `The figure driving this is ${guidance.headline} ` +
-              `Overall the score is ${assessment.score} out of 100: ${assessment.verdict.toLowerCase()}.`,
-          },
-        ],
-        augmentedGeneration: false,
-        callback: (token) => {
-          out += token;
-          setWords(out);
-        },
-      });
-    } catch {
-      // The score and the guidance are the useful parts and both are already
-      // on screen; a failed paragraph should not take them away.
-      setWords("");
-    }
-  }, [rag, assessment, guidance, phase, age]);
   const save = useCallback(async () => {
     if (!db || !rag || !text.trim()) return;
     const body =
@@ -646,11 +595,7 @@ export default function Scan(): JSX.Element {
                     accessibilityRole="radio"
                     accessibilityState={{ selected: age === key }}
                     accessibilityLabel={`${AGES[key].label}, ${AGES[key].note}`}
-                    onPress={() => {
-                      setAge(key);
-                      // The previous paragraph described a different age.
-                      setWords("");
-                    }}
+                    onPress={() => setAge(key)}
                     className={`min-h-[40px] justify-center rounded-full px-3.5 ${
                       age === key ? "" : "border border-border bg-surface"
                     }`}
@@ -772,30 +717,61 @@ export default function Scan(): JSX.Element {
             </View>
 
 
-            <View className="gap-2.5 rounded-[20px] border border-border bg-surface p-4">
-              <View className="flex-row items-center gap-2">
-                <Mascot pose="glasses" size={34} />
-                <Typography.Paragraph className="flex-1 font-ui-bold text-[12.5px]">
-                  In plain words
-                </Typography.Paragraph>
-              </View>
-              {words ? (
-                <Typography.Paragraph className="font-read text-[14px] leading-[23px]">
-                  {words}
-                </Typography.Paragraph>
-              ) : (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => void explain()}
-                  className="min-h-[44px] flex-row items-center justify-center gap-2 rounded-2xl bg-surface-tertiary active:opacity-70"
-                >
-                  <Ionicons name="sparkles-outline" size={16} color={palette.foreground} />
-                  <Typography.Paragraph className="font-ui-bold text-[12.5px]">
-                    Explain this for {whoIs(age)}
+            {ages && (
+              <View className="overflow-hidden rounded-[20px] border border-border bg-surface">
+                <View className="flex-row items-center gap-2 border-b border-separator px-4 py-2.5">
+                  <Mascot pose="glasses" size={30} />
+                  <Typography.Paragraph className="flex-1 font-ui-bold text-[13px]">
+                    For every age
                   </Typography.Paragraph>
-                </Pressable>
-              )}
-            </View>
+                </View>
+                {ages.map((note, index) => (
+                  <View
+                    key={note.age}
+                    className={`gap-1.5 px-4 py-3 ${index > 0 ? "border-t border-separator" : ""}`}
+                    // The age picked above, marked so the two read as one answer.
+                    style={note.age === age ? { backgroundColor: `${palette.accent}12` } : undefined}
+                  >
+                    {/* Label and score on one line; the age range and verdict
+                        under them, because both together wrap at 360dp. */}
+                    <View className="flex-row items-baseline gap-2">
+                      <Typography.Paragraph className="flex-1 font-ui-bold text-[14px]">
+                        {AGES[note.age].label}
+                        <Text className="font-ui text-[11.5px] text-muted">
+                          {`  ${AGES[note.age].note}`}
+                        </Text>
+                      </Typography.Paragraph>
+                      <Typography.Paragraph
+                        className="shrink-0 font-ui-bold text-[14px]"
+                        style={{ color: scoreColour(note.score) }}
+                      >
+                        {note.score}
+                      </Typography.Paragraph>
+                    </View>
+                    <Typography.Paragraph
+                      className="font-ui-medium text-[12px]"
+                      style={{ color: scoreColour(note.score) }}
+                    >
+                      {note.verdict}
+                    </Typography.Paragraph>
+                    {note.points.map((point) => (
+                      <View key={point} className="flex-row gap-2">
+                        <Typography.Paragraph
+                          importantForAccessibility="no"
+                          accessibilityElementsHidden
+                          className="font-read text-[13px] leading-[20px] text-muted"
+                        >
+                          •
+                        </Typography.Paragraph>
+                        <Typography.Paragraph className="flex-1 font-read text-[13px] leading-[20px] text-muted-strong">
+                          {point}
+                        </Typography.Paragraph>
+                      </View>
+                    ))}
+                  </View>
+                ))}
+              </View>
+            )}
 
             <Typography.Paragraph className="font-read text-[11px] leading-[17px] text-muted">
               Values read from the label by the recogniser and scored against the {REFERENCE_LABEL}.

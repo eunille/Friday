@@ -392,6 +392,9 @@ export function whoIs(age: Age): string {
   return `${/^[aeiou]/.test(label) ? "an" : "a"} ${label}`;
 }
 
+/** The nutrients where more is the point. */
+const WORTH_GETTING: readonly NutrientKey[] = ["proteinG", "fibreG"];
+
 export function guidanceFor(panel: Panel, age: Age): Guidance {
   const { rows } = scorePanel(panel, age);
   const who = whoIs(age);
@@ -401,7 +404,8 @@ export function guidanceFor(panel: Panel, age: Age): Guidance {
     .filter((row) => ["sodiumMg", "addedSugarG", "satFatG", "energyKcal"].includes(row.key))
     .reduce<Row | null>((worst, row) => (worst === null || row.share > worst.share ? row : worst), null);
 
-  const good = rows.filter((row) => row.tone === "good" && row.key !== "energyKcal");
+  // Low sodium is good news too, but "a useful amount of sodium" is not.
+  const good = rows.filter((row) => row.tone === "good" && WORTH_GETTING.includes(row.key));
 
   if (driver === null) {
     return {
@@ -457,4 +461,31 @@ export function guidanceFor(panel: Panel, age: Age): Guidance {
         : `One serving is only ${percent}% of ${who}'s daily ${nutrient}.`,
     suggestion: `Nothing here argues against it for ${who}. ${limited.length > 0 ? "The figures above are still worth a glance." : ""}`.trim(),
   };
+}
+
+export type AgeNote = { age: Age; score: number; verdict: string; points: string[] };
+
+/**
+ * The label read for every age at once, as a few short points each, so
+ * nobody has to switch ages and wait to see what it means for a child as
+ * well as an adult. All arithmetic, like guidanceFor: instant, the same
+ * every time, and no model to go round in circles.
+ */
+export function everyAge(panel: Panel): AgeNote[] {
+  return (Object.keys(AGES) as Age[]).map((age) => {
+    const { score, verdict, rows } = scorePanel(panel, age);
+    const guidance = guidanceFor(panel, age);
+    // The driver is already in the headline; this names whatever else is high.
+    const high = rows.filter((row) => row.tone === "bad" && row.key !== guidance.driver?.key);
+    const good = rows.filter((row) => row.tone === "good" && WORTH_GETTING.includes(row.key));
+    const list = (picked: Row[]): string =>
+      picked
+        .map((row) => `${row.label.toLowerCase()} (${Math.round(row.share * 100)}% of the day)`)
+        .join(", ");
+
+    const points = [guidance.headline, guidance.suggestion];
+    if (high.length > 0) points.push(`Also high: ${list(high)}.`);
+    if (good.length > 0) points.push(`Good source of ${list(good)}.`);
+    return { age, score, verdict, points };
+  });
 }

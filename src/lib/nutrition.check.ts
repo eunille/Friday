@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 
 import {
   dailyLimits,
+  everyAge,
   guidanceFor,
   isEmpty,
   parsePanel,
@@ -208,5 +209,22 @@ const light = guidanceFor({ sodiumMg: 40, fibreG: 6 }, "adult");
 assert.ok(light.driver !== null);
 assert.ok(light.driver.share < 0.15);
 assert.ok(!/past|avoid|smaller portion/i.test(light.suggestion), light.suggestion);
+// Low sodium is good news, but it is not "a useful amount of sodium".
+assert.ok(!/useful amount of sodium/i.test(light.headline), light.headline);
+
+// Every age at once, each with its own reading of the same serving.
+const ages = everyAge({ sodiumMg: 1000, addedSugarG: 20, proteinG: 15 });
+assert.deepEqual(
+  ages.map((note) => note.age),
+  ["child", "teen", "adult", "elderly"]
+);
+for (const note of ages) {
+  assert.equal(note.score, scorePanel({ sodiumMg: 1000, addedSugarG: 20, proteinG: 15 }, note.age).score);
+  assert.ok(note.points.length >= 2 && note.points.length <= 4, note.points.join(" | "));
+}
+// A child's day allows less, so the same serving is a bigger share of it.
+assert.match(ages[0].points[0], /74% of a child's daily sodium/);
+assert.match(ages[2].points[0], /50% of an adult's daily sodium/);
+assert.ok(ages[0].points.some((point) => /^Also high: added sugar/.test(point)), ages[0].points.join(" | "));
 
 console.log("nutrition: all checks passed");
