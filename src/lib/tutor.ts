@@ -198,6 +198,26 @@ export const TEACH_PROMPT = [
 ].join("\n");
 
 /**
+ * Repeated at the end of the student's own turn. A 0.5B model weighs the last
+ * thing it read far above the system prompt, so the one rule it most drops —
+ * end on a question — goes where it is read last.
+ */
+export const TEACH_NUDGE =
+  "(Teach me one small step, then end with one short question to check I understood.)";
+
+/**
+ * The instruction for the check question, when a Teach reply came back without
+ * one — the model ignored the rule, or the length cap cut it off.
+ */
+export const CHECK_PROMPT =
+  "Write one short question that checks a student understood the explanation below. Reply with only the question.";
+
+/** Whether a Teach reply already ends on its check question. */
+export function endsOnQuestion(reply: string): boolean {
+  return /\?["')\]*\s]*$/.test(reply);
+}
+
+/**
  * The instruction for writing a test. The format is the one the quiz screen
  * already parses (`parseQuiz`), so both read questions the same way.
  */

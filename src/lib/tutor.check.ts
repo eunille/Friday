@@ -12,6 +12,7 @@ import {
   detectMode,
   detectNotes,
   detectQuiz,
+  endsOnQuestion,
   pickNotes,
   scoreLine,
   testPrompt,
@@ -154,5 +155,12 @@ assert.equal(verdict(options, 1, 3), "Not quite — it's B) Three.");
 assert.ok(scoreLine(5, 5).startsWith("Perfect — 5 of 5"));
 assert.ok(scoreLine(3, 5).startsWith("Nice work — 3 of 5"));
 assert.ok(scoreLine(1, 5).startsWith("Worth another pass — 1 of 5"));
+
+// A Teach reply that already checks needs no second call; one that stops on a
+// statement — skipped or cut off — gets its question written for it.
+assert.ok(endsOnQuestion("A subnet splits a network. Which part names the host?"));
+assert.ok(endsOnQuestion('Can you name one? "'));
+assert.ok(!endsOnQuestion("A subnet splits a network into smaller ones."));
+assert.ok(!endsOnQuestion("Is it? No — it is the mask that decides."));
 
 console.log("tutor: all checks passed");

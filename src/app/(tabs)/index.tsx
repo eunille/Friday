@@ -43,8 +43,11 @@ import { useDictation } from "../../lib/dictation";
 import { useReader } from "../../lib/reader";
 import { asContext, retrieve, type Chunk, type Scope } from "../../lib/retrieval";
 import {
+  CHECK_PROMPT,
   MODES,
+  TEACH_NUDGE,
   TEACH_PROMPT,
+  endsOnQuestion,
   TEST_LENGTH,
   detectMode,
   detectNotes,
@@ -64,6 +67,9 @@ import { useKeyboardOverlap, usePalette } from "../../lib/theme";
  * keeps going past the format is only adding text parseQuiz will drop.
  */
 const TEST_TOKENS = 700;
+
+/** One short question. A model still talking past this is not writing one. */
+const CHECK_TOKENS = 60;
 
 const PLACEHOLDERS: Record<Mode, string> = {
   ask: "Ask anything…",
@@ -423,6 +429,10 @@ function Chat(): JSX.Element {
             content: `Message: ${question}\nContext: ${asContext(chunks)}`,
           });
         }
+        if (as === "teach") {
+          const last = input[input.length - 1];
+          if (last) input[input.length - 1] = { ...last, content: `${last.content}\n\n${TEACH_NUDGE}` };
+        }
 
         await rag.generate({
           input,
@@ -444,6 +454,34 @@ function Chat(): JSX.Element {
         // Interrupting lands mid-word, which reads as a crash rather than a
         // limit, so the tail goes back to the last finished sentence.
         if (cut) answer = trimToSentence(answer);
+        // Teach is only Teach if it checks. When the model skipped the question
+        // or the cap cut it off, one short call writes it — the same idea as
+        // Test, where the app keeps the format rather than trusting the model.
+        if (as === "teach" && answer.trim() && !endsOnQuestion(answer)) {
+          let check = "";
+          let checkTokens = 0;
+          let checkCut = false;
+          await rag.generate({
+            input: [
+              { role: "system", content: CHECK_PROMPT },
+              { role: "user", content: answer },
+            ],
+            augmentedGeneration: false,
+            callback: (token) => {
+              check += token;
+              checkTokens += 1;
+              setStreaming(`${answer}\n\n${check}`);
+              if (checkTokens > CHECK_TOKENS && !checkCut) {
+                checkCut = true;
+                void rag.interrupt();
+              }
+            },
+          });
+          check = check.trim();
+          // Only a real question is worth adding; anything else is noise.
+          if (endsOnQuestion(check)) answer = `${answer}\n\n${check}`;
+          tokens += checkTokens;
+        }
         const finished: Entry[] = [
           ...asked,
           { role: "assistant", content: answer, cites, ms: Date.now() - started, tokens },
