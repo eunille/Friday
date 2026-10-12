@@ -20,15 +20,9 @@ import {
   type Note,
   type QuizResult,
 } from "../../lib/ai";
-import {
-  monthKey,
-  netWorth,
-  peso,
-  totalsFor,
-  type Account,
-  type Txn,
-} from "../../lib/budget";
+import { monthKey, netWorth, peso, totalsFor, type Account, type Txn } from "../../lib/budget";
 import { preview, relativeDate } from "../../lib/formats";
+import { dayKey, dayScore, listChecks, listHabits, type Habit } from "../../lib/habits";
 import { listAccounts, listTxns } from "../../lib/ledger";
 import { ON_INK, usePalette } from "../../lib/theme";
 
@@ -103,13 +97,13 @@ export default function Home(): JSX.Element {
   const [weak, setWeak] = useState<QuizResult[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [txns, setTxns] = useState<Txn[]>([]);
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [checks, setChecks] = useState<Set<string>>(new Set());
+  const habitsToday = dayScore(habits, checks, dayKey(new Date()));
 
   const wallets = useMemo(() => accounts.filter((account) => !account.archived), [accounts]);
   const balance = useMemo(() => netWorth(wallets, txns), [wallets, txns]);
-  const thisMonth = useMemo(
-    () => totalsFor(txns, monthKey(new Date().toISOString())),
-    [txns]
-  );
+  const thisMonth = useMemo(() => totalsFor(txns, monthKey(new Date().toISOString())), [txns]);
 
   // On focus, not just on mount. This tab stays mounted under whatever is
   // pushed over it, so the Money strip kept showing the balance from before
@@ -118,6 +112,8 @@ export default function Home(): JSX.Element {
     if (!db) return;
     void listAccounts(db).then(setAccounts);
     void listTxns(db).then(setTxns);
+    void listHabits(db).then(setHabits);
+    void listChecks(db).then(setChecks);
     void listNotes(db).then(setNotes);
     void listChats(db, 5).then(setChats);
     void listQuizResults(db, 5).then(setQuizzes);
@@ -301,6 +297,54 @@ export default function Home(): JSX.Element {
             </Typography.Paragraph>
           </View>
           <Ionicons name="arrow-forward" size={18} color={palette.moneyForeground} />
+        </Pressable>
+
+        {/* Habits, as a strip like Money: the shortcut that already answers
+            "have I done today's" before it is tapped. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            habits.length === 0
+              ? "Track your habits"
+              : `Habits, ${habitsToday.done} of ${habitsToday.due} done today`
+          }
+          onPress={() => router.push("/habits")}
+          className="gap-2.5 rounded-[20px] border border-border bg-surface p-4 active:opacity-90"
+        >
+          <View className="flex-row items-center gap-3">
+            <View
+              className="h-9 w-9 items-center justify-center rounded-xl"
+              style={{ backgroundColor: palette.onDeviceSoft }}
+            >
+              <Ionicons name="calendar" size={18} color={palette.onDevice} />
+            </View>
+            <View className="flex-1">
+              <Typography.Paragraph className="font-ui-bold text-[14px]">
+                Habits
+              </Typography.Paragraph>
+              <Typography.Paragraph className="font-ui text-[11.5px] text-muted">
+                {habits.length === 0
+                  ? "Plan your week, keep a streak"
+                  : habitsToday.due === 0
+                    ? "Nothing planned today"
+                    : habitsToday.done === habitsToday.due
+                      ? "All done today"
+                      : `${habitsToday.done} of ${habitsToday.due} done today`}
+              </Typography.Paragraph>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={palette.mutedSoft} />
+          </View>
+          {habitsToday.due > 0 && (
+            <View className="h-[6px] w-full overflow-hidden rounded-full bg-surface-tertiary">
+              <View
+                className="h-full rounded-full"
+                style={{
+                  width: `${(habitsToday.done / habitsToday.due) * 100}%`,
+                  backgroundColor: palette.onDevice,
+                }}
+              />
+            </View>
+          )}
         </Pressable>
 
         <View className="gap-2.5">

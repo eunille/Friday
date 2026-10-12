@@ -22,6 +22,7 @@
     "src/lib/retrieval.check.ts",
     "src/lib/tutor.check.ts",
     "src/lib/recovery.check.ts",
-    "src/lib/voice.check.ts"
+    "src/lib/voice.check.ts",
+    "src/lib/habits.check.ts"
   ]
 }

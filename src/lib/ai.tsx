@@ -26,6 +26,7 @@ import { RAG, uuidv4, type Message } from "react-native-rag";
 
 import { MascotCooking, MascotFocused, useCookingWord } from "../components/cooking";
 import { joinChunks, repeatTail } from "./formats";
+import { createHabitTables } from "./habits";
 import { createLedgerTables } from "./ledger";
 import { recover } from "./recovery";
 import { usePalette } from "./theme";
@@ -549,6 +550,7 @@ export function AIProvider({ children }: { children: ReactNode }): JSX.Element {
            )`
         );
         await createLedgerTables(db);
+        await createHabitTables(db);
         await backfillNotes(db);
         if (cancelled) return;
 

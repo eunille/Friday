@@ -149,6 +149,71 @@ tables.set("txns", [
   },
 ]);
 
+/** Local "YYYY-MM-DD", the way lib/habits keys its days. */
+function localDay(daysBack: number): string {
+  const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysBack);
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+const HABIT_START = localDay(400);
+tables.set("habits", [
+  {
+    id: "h1",
+    name: "Drink 8 glasses of water",
+    icon: "water",
+    days: "0,1,2,3,4,5,6",
+    once: null,
+    start: HABIT_START,
+    createdAt: "1",
+  },
+  {
+    id: "h2",
+    name: "Read 10 pages",
+    icon: "book",
+    days: "0,1,2,3,4,5,6",
+    once: null,
+    start: HABIT_START,
+    createdAt: "2",
+  },
+  {
+    id: "h3",
+    name: "Gym",
+    icon: "barbell",
+    days: "1,3,5",
+    once: null,
+    start: HABIT_START,
+    createdAt: "3",
+  },
+  {
+    id: "h4",
+    name: "Call mom",
+    icon: "call",
+    days: "0",
+    once: null,
+    start: HABIT_START,
+    createdAt: "4",
+  },
+]);
+
+/**
+ * Thirteen months of mostly-kept habits, reaching into last year, so the heatmap has a shape. Seeded, not
+ * random, so the preview looks the same on every reload; today is left open so
+ * there is something to tick and a confetti to see.
+ */
+let seed = 7;
+const roll = (): number => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const keep: Record<string, number> = { h1: 0.55, h2: 0.35, h3: 0.3, h4: 0.6 };
+const checks: Row[] = [];
+for (let back = 400; back >= 1; back -= 1) {
+  // A slow improvement, which is the story a habit tracker wants to tell.
+  const lift = (400 - back) / 1000;
+  for (const id of Object.keys(keep)) {
+    if (roll() < keep[id]! + lift) checks.push({ habitId: id, day: localDay(back) });
+  }
+}
+tables.set("habit_checks", checks);
+
 for (const empty of ["notes", "chats", "quiz_results", "vectors", "settings"]) table(empty);
 
 type Metadata = { sourceId: string; kind: string; title: string; createdAt: string };
@@ -228,6 +293,14 @@ function run(sql: string, args: unknown[] = []): { rows: Row[] } {
   }
 
   if (/^DELETE/i.test(text)) {
+    // Keyed by (habitId, day), not by id: one habit, or one of its days.
+    if (name === "habit_checks") {
+      tables.set(
+        name,
+        rows.filter((row) => !(row.habitId === args[0] && (args.length < 2 || row.day === args[1])))
+      );
+      return { rows: [] };
+    }
     if (/json_extract\(metadata/i.test(text)) {
       tables.set(
         name,
@@ -258,7 +331,7 @@ function run(sql: string, args: unknown[] = []): { rows: Row[] } {
 
   // INSERT and UPDATE both arrive as upserts, and the id is always bound first.
   if (/^(INSERT|UPDATE|REPLACE)/i.test(text)) {
-    const id = String(args[0] ?? "");
+    const id = name === "habit_checks" ? args.join("|") : String(args[0] ?? "");
     const index = rows.findIndex((row) => row.id === id);
     // Columns in declaration order, which is the order the app binds them.
     const columns = /\(([^)]+)\)\s*VALUES/i.exec(text)?.[1];
@@ -353,9 +426,7 @@ export class RAG {
     // plausible-looking answer, which is the one genuinely harmful thing a
     // preview could do.
     // Keyed on the format line both the Tutor and the Quiz page ask for.
-    const reply = /Correct: <letter>/.test(input?.[0]?.content ?? "")
-      ? PREVIEW_TEST
-      : UNAVAILABLE;
+    const reply = /Correct: <letter>/.test(input?.[0]?.content ?? "") ? PREVIEW_TEST : UNAVAILABLE;
     callback?.(reply);
     return reply;
   }
@@ -549,10 +620,13 @@ export class AudioContext {
       const buffer = waiting.shift();
       playing = buffer !== undefined;
       if (!buffer || !started) return;
-      timer = setTimeout(() => {
-        node.onBufferEnded?.();
-        next();
-      }, (buffer.length / rate) * 1000);
+      timer = setTimeout(
+        () => {
+          node.onBufferEnded?.();
+          next();
+        },
+        (buffer.length / rate) * 1000
+      );
     };
     return node;
   }

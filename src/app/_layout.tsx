@@ -67,6 +67,7 @@ function Themed(): JSX.Element {
         <Stack.Screen name="budget/wallet/[id]" />
         <Stack.Screen name="budget/ask" />
         <Stack.Screen name="budget/charts" />
+        <Stack.Screen name="habits/index" />
         <Stack.Screen name="settings" />
       </Stack>
       <StatusBar style={booted && theme !== "dark" ? "dark" : "light"} />
