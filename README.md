@@ -6,12 +6,12 @@ off a photographed label — and it does all of that on the phone. No account, n
 no server. After the first run it works in airplane mode.
 
 <p align="center">
-  <img src="assets/download-qr-1.4.0.png" width="220" alt="QR code that downloads the Android APK" />
+  <img src="assets/download-qr-1.5.0.png" width="220" alt="QR code that downloads the Android APK" />
 </p>
 
 <p align="center">
-  <b><a href="https://github.com/eunille/Friday/releases/download/1.4.0/Friday-1.4.0.apk">Download for Android</a></b><br />
-  <sub>Scan the code with an Android phone, or use the link. 101 MB, v1.4.0.</sub>
+  <b><a href="https://github.com/eunille/Friday/releases/download/1.5.0/Friday-1.5.0.apk">Download for Android</a></b><br />
+  <sub>Scan the code with an Android phone, or use the link. 101 MB, v1.5.0.</sub>
 </p>
 
 > Android will warn that this is from an unknown developer. That is expected — the app is
@@ -55,6 +55,12 @@ only instruction is to copy numbers off the panel into JSON — it is never aske
 food is healthy. The score is arithmetic against the WHO reference in `src/lib/nutrition.ts`,
 so the same label always produces the same score, and `npm run check` can assert on it. Swap
 that one object and one label to score against a different reference; nothing else changes.
+
+**Habits** — plan what you mean to do on a week calendar: every day, chosen weekdays, or
+just one day. The icon is picked from the name as you type. Progress is a GitHub-style
+heatmap, week and month bars, and your habits ranked by how steadily you keep them.
+Finishing a day, a week, a month or a year each sets off its own confetti. Streaks start
+again every January, and earlier years stay as a report you can look back on.
 
 **Search** — semantic, not keyword. "How do I stop a burn hurting" finds a note that only
 says "cool under running water", because the match is on meaning. This runs without the
